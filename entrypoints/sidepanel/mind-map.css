@@ -1,0 +1,110 @@
+.parent-picker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  color: #777269;
+  font-size: 10px;
+}
+.parent-picker span { flex: 0 0 auto; font-weight: 700; }
+.parent-picker select {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid #e0ddd6;
+  border-radius: 7px;
+  background: #faf9f6;
+  padding: 5px 7px;
+  color: #4b4943;
+  font-size: 10px;
+}
+.mind-map { margin: 0 -16px; }
+.map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 9px;
+}
+.map-toolbar div { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.map-toolbar strong { font-size: 11px; color: #45423d; }
+.map-toolbar span { color: #8a857d; font-size: 9px; }
+.map-toolbar button { padding: 5px 7px; border-radius: 6px; font-size: 9px; white-space: nowrap; }
+.map-canvas {
+  width: 100%;
+  height: min(58vh, 560px);
+  min-height: 390px;
+  overflow: hidden;
+  border-block: 1px solid #dce2df;
+  background: #eef3f2;
+}
+.map-canvas .react-flow { background: #eef3f2; }
+.map-canvas .react-flow__pane { cursor: grab; }
+.map-canvas .react-flow__pane:active { cursor: grabbing; }
+.map-canvas .react-flow__edge-path { stroke: #77a48f; }
+.map-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: #347b61; stroke-width: 2.4px; }
+.map-canvas .react-flow__connection-path { stroke: #347b61; stroke-width: 2px; }
+.map-canvas .react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border: 2px solid #f8fbfa;
+  background: #4d8a70;
+}
+.map-canvas .react-flow__node { cursor: grab; }
+.map-canvas .react-flow__node.dragging { cursor: grabbing; }
+.map-canvas .flow-node {
+  width: 210px;
+  min-height: 84px;
+  border: 1px solid #dacb81;
+  border-left: 5px solid #d4b945;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff7c7;
+  color: #37352f;
+  text-align: left;
+  box-shadow: 0 4px 14px #31483e1c;
+}
+.map-canvas .flow-node.selected { outline: 2px solid #347b61; outline-offset: 2px; }
+.map-canvas .flow-node.flow-focus { outline: 3px solid #2f725b88; outline-offset: 3px; box-shadow: 0 7px 18px #285f4930; }
+.map-canvas .flow-node .react-flow__node-default,
+.map-canvas .flow-node .react-flow__node-input { border: 0; }
+.map-canvas .flow-node .platform { display: block; margin-bottom: 5px; font-size: 8px; text-transform: uppercase; }
+.map-canvas .flow-node strong {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  font: 600 10px/1.45 system-ui, sans-serif;
+}
+.map-canvas .flow-node small {
+  display: -webkit-box;
+  max-width: 100%;
+  margin-top: 5px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #777269;
+  font: 9px/1.35 system-ui, sans-serif;
+}
+.map-canvas .flow-root {
+  width: 176px;
+  min-height: 68px;
+  border-color: #d48e50;
+  border-left-color: #c97d3b;
+  background: #f6b777;
+  color: #58351d;
+}
+.map-canvas .flow-root strong { font: 700 13px/1.35 Georgia, "Songti SC", serif; }
+.map-canvas .flow-root small { color: #6b4328; }
+.map-canvas .color-green { border-color: #8cc5a0; border-left-color: #4f9b6f; background: #e3f5e9; }
+.map-canvas .color-blue { border-color: #9bb9df; border-left-color: #5888ca; background: #e3efff; }
+.map-canvas .color-pink { border-color: #dea4bb; border-left-color: #c86d91; background: #fde8f0; }
+.map-canvas .react-flow__controls { overflow: hidden; border: 1px solid #d5ddd9; border-radius: 8px; box-shadow: 0 3px 12px #33463e1c; }
+.map-canvas .react-flow__controls-button { width: 25px; height: 25px; border: 0; border-radius: 0; color: #4d5752; }
+.map-canvas .react-flow__minimap { width: 92px; height: 64px; border: 1px solid #cfd8d4; border-radius: 7px; background: #f8faf9; box-shadow: 0 3px 12px #33463e12; }
+.map-canvas .react-flow__attribution { padding: 2px 4px; background: #f8faf9cc; color: #7f8b85; font-size: 7px; }
+.map-help { margin: 8px 16px 0; color: #858077; font-size: 10px; line-height: 1.5; }

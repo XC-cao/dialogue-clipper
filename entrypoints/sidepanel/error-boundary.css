@@ -1,0 +1,28 @@
+.panel-fallback {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  min-height: 100vh;
+  padding: 28px;
+  text-align: center;
+}
+
+.panel-fallback > div {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #8f3030;
+  color: #fff;
+  font-weight: 800;
+}
+
+.panel-fallback p {
+  max-width: 300px;
+  margin: 0 0 8px;
+  color: #6f6a62;
+  font-size: 12px;
+  line-height: 1.6;
+}

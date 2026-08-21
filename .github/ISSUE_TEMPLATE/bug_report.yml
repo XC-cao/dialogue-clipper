@@ -1,0 +1,31 @@
+name: 错误报告
+description: 报告可复现的问题（请勿粘贴真实或敏感对话）
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台
+      options: [ChatGPT, Claude, Gemini, 侧栏或导出]
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: 扩展与 Chrome 版本
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 脱敏复现步骤
+      description: 请删除姓名、账号、对话内容和链接中的私密标识。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期与实际结果
+    validations:
+      required: true

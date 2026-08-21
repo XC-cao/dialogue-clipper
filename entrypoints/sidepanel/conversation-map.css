@@ -1,0 +1,46 @@
+.navigation-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin: 0 0 12px; padding: 3px; border-radius: 9px; background: #e9e7e1; }
+.navigation-switch button { border: 0; padding: 7px 8px; border-radius: 7px; background: transparent; color: #777269; font-size: 11px; }
+.navigation-switch button.active { background: #fff; color: #292824; box-shadow: 0 1px 5px #3d392d18; font-weight: 700; }
+.conversation-map { margin: 0 -16px; }
+.conversation-map-head { display: flex; align-items: center; gap: 6px; padding: 0 12px 9px; }
+.conversation-map-head > div { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.conversation-map-head strong { overflow: hidden; color: #45423d; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-map-head span { color: #8a857d; font-size: 9px; }
+.conversation-map-head button { flex: 0 0 auto; padding: 5px 7px; border-radius: 6px; font-size: 9px; }
+.conversation-filters { display: flex; align-items: center; gap: 4px; padding: 0 12px 8px; }
+.conversation-filters button { border: 0; padding: 5px 7px; background: transparent; color: #827d74; font-size: 9px; }
+.conversation-filters button.active { background: #dedbd4; color: #292824; font-weight: 700; }
+.conversation-filters button.follow { margin-left: auto; }
+.conversation-filters button.follow:before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: #aaa69d; }
+.conversation-filters button.follow.active:before { background: #388268; box-shadow: 0 0 0 2px #bde3d5; }
+.conversation-filters span { padding: 0 3px; border-radius: 8px; background: #fff; font-size: 8px; }
+.conversation-search { display: flex; align-items: center; gap: 3px; margin: 0 12px 9px; }
+.conversation-search input { min-width: 0; flex: 1; border: 1px solid #d8d5ce; border-radius: 7px; padding: 7px 8px; background: #fff; font-size: 10px; }
+.conversation-search span { color: #777269; font-size: 9px; font-variant-numeric: tabular-nums; }
+.conversation-search button { width: 25px; height: 25px; padding: 0; border-radius: 6px; font-size: 10px; }
+.conversation-inline-error { margin: -2px 12px 8px; color: #9b3a32; font-size: 9px; line-height: 1.4; }
+.conversation-canvas { width: 100%; height: min(57vh, 550px); min-height: 380px; overflow: hidden; border-block: 1px solid #dce2df; background: #eef3f2; }
+.conversation-canvas .react-flow { background: #eef3f2; }
+.conversation-canvas .react-flow__edge-path { stroke-linecap: round; }
+.conversation-canvas .conversation-flow-node { width: 182px; border: 0; background: transparent; box-shadow: none; text-align: left; }
+.conversation-node-card { position: relative; width: 182px; min-height: 88px; border: 1px solid #d7d8d2; border-left: 4px solid #909c97; border-radius: 9px; padding: 9px 10px; background: #fff; color: #363631; box-shadow: 0 4px 13px #31483e14; transition: opacity .15s, box-shadow .15s, border-color .15s; }
+.role-user .conversation-node-card { border-color: #dac480; border-left-color: #d6a632; background: #fff8dc; }
+.role-assistant .conversation-node-card { border-color: #a8cbbb; border-left-color: #4d9679; background: #edf8f2; }
+.conversation-node-card.is-active { outline: 3px solid #43866e55; outline-offset: 3px; box-shadow: 0 6px 17px #285f4930; }
+.conversation-node-card.is-match { box-shadow: 0 0 0 3px #e9a82c66, 0 5px 15px #31483e20; }
+.conversation-node-card.is-dimmed { opacity: .28; }
+.conversation-flow-node.selected-by-user .conversation-node-card { outline: 2px solid #3f4542; outline-offset: 2px; }
+.conversation-node-meta { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; color: #777d79; font-size: 8px; font-weight: 700; text-transform: uppercase; }
+.conversation-node-meta i { padding: 2px 4px; border-radius: 5px; background: #e6e8e5; font-style: normal; font-weight: 600; text-transform: none; }
+.conversation-node-meta i.current { margin-left: auto; background: #347b61; color: #fff; }
+.conversation-node-card > strong { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; word-break: break-word; -webkit-box-orient: vertical; -webkit-line-clamp: 3; font: 600 10px/1.45 system-ui, sans-serif; }
+.conversation-clip-badge { margin-top: 7px; border: 0; border-radius: 999px; padding: 4px 7px; background: #2e6f58; color: #fff; font-size: 8px; font-weight: 700; }
+.conversation-node-card .react-flow__handle { width: 8px; height: 8px; border: 2px solid #f7faf8; background: #4d8a70; }
+.conversation-canvas .react-flow__controls { overflow: hidden; border: 1px solid #d5ddd9; border-radius: 8px; box-shadow: 0 3px 12px #33463e1c; }
+.conversation-canvas .react-flow__controls-button { width: 25px; height: 25px; border: 0; border-radius: 0; color: #4d5752; }
+.conversation-canvas .react-flow__minimap { width: 88px; height: 60px; border: 1px solid #cfd8d4; border-radius: 7px; background: #f8faf9; }
+.conversation-canvas .react-flow__attribution { padding: 2px 4px; background: #f8faf9cc; color: #7f8b85; font-size: 7px; }
+.conversation-state { display: flex; min-height: 260px; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 28px 20px; color: #777269; text-align: center; }
+.conversation-state div { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: #e6e3dc; color: #45423d; font-size: 16px; }
+.conversation-state strong { max-width: 250px; color: #45423d; font-size: 12px; line-height: 1.45; }
+.conversation-state button { padding: 6px 9px; font-size: 10px; }

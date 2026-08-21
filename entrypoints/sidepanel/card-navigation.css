@@ -1,0 +1,18 @@
+.clip-card {
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.clip-card:hover {
+  border-color: #aaa59b;
+  box-shadow: 0 5px 18px #3d392d12;
+}
+
+.clip-card:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
+.clip-card textarea {
+  cursor: text;
+}

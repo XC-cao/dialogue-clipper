@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300" role="img" aria-labelledby="title desc">
+  <title id="title">对话摘录核心流程</title><desc id="desc">从 AI 对话选择原文，加入主题笔记，添加批注并导出 Markdown。</desc>
+  <rect width="960" height="300" rx="24" fill="#f4f1e9"/>
+  <g font-family="system-ui, sans-serif" text-anchor="middle">
+    <g transform="translate(70 72)"><rect width="170" height="150" rx="18" fill="#fff" stroke="#d9d3c5"/><text x="85" y="42" font-size="14" fill="#888">01</text><text x="85" y="77" font-size="20" font-weight="700" fill="#25231f">选择原文</text><text x="85" y="108" font-size="13" fill="#716d64">ChatGPT · Claude</text><text x="85" y="130" font-size="13" fill="#716d64">Gemini</text></g>
+    <path d="M255 147h50" stroke="#aaa396" stroke-width="2"/><path d="m298 140 9 7-9 7" fill="none" stroke="#aaa396" stroke-width="2"/>
+    <g transform="translate(320 72)"><rect width="170" height="150" rx="18" fill="#fff" stroke="#d9d3c5"/><text x="85" y="42" font-size="14" fill="#888">02</text><text x="85" y="77" font-size="20" font-weight="700" fill="#25231f">加入笔记</text><text x="85" y="112" font-size="13" fill="#716d64">保留来源与角色</text></g>
+    <path d="M505 147h50" stroke="#aaa396" stroke-width="2"/><path d="m548 140 9 7-9 7" fill="none" stroke="#aaa396" stroke-width="2"/>
+    <g transform="translate(570 72)"><rect width="170" height="150" rx="18" fill="#fff" stroke="#d9d3c5"/><text x="85" y="42" font-size="14" fill="#888">03</text><text x="85" y="77" font-size="20" font-weight="700" fill="#25231f">添加批注</text><text x="85" y="112" font-size="13" fill="#716d64">排序 · 高亮 · 思考</text></g>
+    <path d="M755 147h50" stroke="#aaa396" stroke-width="2"/><path d="m798 140 9 7-9 7" fill="none" stroke="#aaa396" stroke-width="2"/>
+    <g transform="translate(820 72)"><rect width="100" height="150" rx="18" fill="#25231f"/><text x="50" y="42" font-size="14" fill="#aaa">04</text><text x="50" y="77" font-size="18" font-weight="700" fill="#fff">导出</text><text x="50" y="112" font-size="13" fill="#ddd">.md</text></g>
+  </g>
+</svg>

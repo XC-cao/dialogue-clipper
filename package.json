@@ -1,0 +1,37 @@
+{
+  "name": "dialogue-clipper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "本地优先的 AI 对话摘录与 Markdown 笔记 Chrome 扩展",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "wxt prepare && vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.3",
+    "@types/dagre": "^0.7.54",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitest/coverage-v8": "^3.2.4",
+    "@wxt-dev/module-react": "^1.1.3",
+    "jsdom": "^26.1.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4",
+    "wxt": "^0.20.11"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^3.1.1",
+    "@xyflow/react": "^12.11.3"
+  }
+}
