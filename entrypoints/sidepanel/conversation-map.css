@@ -23,7 +23,7 @@
 .conversation-canvas .react-flow { background: #eef3f2; }
 .conversation-canvas .react-flow__edge-path { stroke-linecap: round; }
 .conversation-canvas .conversation-flow-node { width: 182px; border: 0; background: transparent; box-shadow: none; text-align: left; }
-.conversation-node-card { position: relative; width: 182px; min-height: 88px; border: 1px solid #d7d8d2; border-left: 4px solid #909c97; border-radius: 9px; padding: 9px 10px; background: #fff; color: #363631; box-shadow: 0 4px 13px #31483e14; transition: opacity .15s, box-shadow .15s, border-color .15s; }
+.conversation-node-card { position: relative; width: 182px; min-height: 112px; border: 1px solid #d7d8d2; border-left: 4px solid #909c97; border-radius: 9px; padding: 9px 10px; background: #fff; color: #363631; box-shadow: 0 4px 13px #31483e14; transition: opacity .15s, box-shadow .15s, border-color .15s; }
 .role-user .conversation-node-card { border-color: #dac480; border-left-color: #d6a632; background: #fff8dc; }
 .role-assistant .conversation-node-card { border-color: #a8cbbb; border-left-color: #4d9679; background: #edf8f2; }
 .conversation-node-card.is-active { outline: 3px solid #43866e55; outline-offset: 3px; box-shadow: 0 6px 17px #285f4930; }
@@ -33,7 +33,8 @@
 .conversation-node-meta { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; color: #777d79; font-size: 8px; font-weight: 700; text-transform: uppercase; }
 .conversation-node-meta i { padding: 2px 4px; border-radius: 5px; background: #e6e8e5; font-style: normal; font-weight: 600; text-transform: none; }
 .conversation-node-meta i.current { margin-left: auto; background: #347b61; color: #fff; }
-.conversation-node-card > strong { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; word-break: break-word; -webkit-box-orient: vertical; -webkit-line-clamp: 3; font: 600 10px/1.45 system-ui, sans-serif; }
+.conversation-node-title { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; color: #292c2a; word-break: break-word; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font: 700 11px/1.4 system-ui, sans-serif; }
+.conversation-node-preview { display: -webkit-box; overflow: hidden; margin: 5px 0 0; color: #666d69; overflow-wrap: anywhere; word-break: break-word; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font: 9px/1.45 system-ui, sans-serif; }
 .conversation-clip-badge { margin-top: 7px; border: 0; border-radius: 999px; padding: 4px 7px; background: #2e6f58; color: #fff; font-size: 8px; font-weight: 700; }
 .conversation-node-card .react-flow__handle { width: 8px; height: 8px; border: 2px solid #f7faf8; background: #4d8a70; }
 .conversation-canvas .react-flow__controls { overflow: hidden; border: 1px solid #d5ddd9; border-radius: 8px; box-shadow: 0 3px 12px #33463e1c; }

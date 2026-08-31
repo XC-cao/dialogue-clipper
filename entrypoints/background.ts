@@ -1,14 +1,16 @@
 import { addCapture, updateState } from '../lib/storage';
 import { isCapturePayload, type ExtensionMessage } from '../lib/messages';
+import { openWorkspace, saveFocusRequest } from '../lib/extension-platform';
 
 export default defineBackground(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);
+  chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true }).catch(console.error);
 
   chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
     if (message?.version !== 1) return;
     if (message.type === 'FOCUS_CLIP') {
-      if (sender.tab?.id !== undefined) void chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => undefined);
-      void chrome.storage.session.set({ dialogueClipperFocusRequest: { clipId: message.clipId, requestedAt: Date.now() } });
+      void saveFocusRequest({ clipId: message.clipId, requestedAt: Date.now() })
+        .then(() => openWorkspace(sender.tab?.id))
+        .catch(() => undefined);
       return;
     }
     if (message.type === 'UPDATE_ANCHOR_STATUSES') {
@@ -23,7 +25,7 @@ export default defineBackground(() => {
     if (message.type !== 'CAPTURE_SELECTION' || !isCapturePayload(message.payload)) return;
     void addCapture(message.payload).then(async result => {
       if (result.pending && sender.tab?.id !== undefined) {
-        await chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => undefined);
+        await openWorkspace(sender.tab.id).catch(() => undefined);
       }
       sendResponse({ version: 1, type: 'CAPTURE_RESULT', ok: true, ...result } satisfies ExtensionMessage);
     }).catch(error => sendResponse({ version: 1, type: 'CAPTURE_RESULT', ok: false, error: String(error) } satisfies ExtensionMessage));

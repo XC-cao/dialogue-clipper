@@ -18,12 +18,12 @@ describe('renderMarkdown', () => {
     const result = renderMarkdown(notebook, [clip]);
     expect(result).toContain('title: "方法：A/B?"');
     expect(result).toContain('> 第一行\n> \n> 第二行');
-    expect(result).toContain('**我的批注**\n\n我的判断');
+    expect(result).toContain('**My annotation**\n\n我的判断');
     expect(result).toContain('[标题 \\[草稿\\]](https://chatgpt.com/c/a\\(b\\))');
   });
 
   it('空批注时省略批注标题', () => {
-    expect(renderMarkdown(notebook, [{ ...clip, annotation: '  ' }])).not.toContain('我的批注');
+    expect(renderMarkdown(notebook, [{ ...clip, annotation: '  ' }])).not.toContain('My annotation');
   });
 
   it('生成安全文件名', () => {

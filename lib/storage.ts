@@ -12,6 +12,13 @@ const STORAGE_KEY = 'dialogueClipperState';
 const FALLBACK_TIME = '1970-01-01T00:00:00.000Z';
 let queue = Promise.resolve();
 
+export interface DeletedClipSnapshot {
+  clip: Clip;
+  index: number;
+  childIds: string[];
+  position?: { x: number; y: number };
+}
+
 function id(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
 }
@@ -34,7 +41,7 @@ export function normalizeState(value: unknown): StoredState {
         : undefined;
       notebooks[notebookId] = {
         id: notebookId,
-        title: stringValue(value.title, '未命名笔记'),
+        title: stringValue(value.title, 'Untitled notebook'),
         description: stringValue(value.description, ''),
         clipIds: Array.isArray(value.clipIds) ? [...new Set(value.clipIds.filter((id): id is string => typeof id === 'string'))] : [],
         mindMapPositions: positions && Object.keys(positions).length ? positions : undefined,
@@ -58,8 +65,8 @@ export function normalizeState(value: unknown): StoredState {
     while (notebooks[recoveredId]) recoveredId += '_1';
     notebooks[recoveredId] = {
       id: recoveredId,
-      title: '恢复的摘录',
-      description: '从不完整的旧版或损坏数据中恢复。',
+      title: 'Recovered clips',
+      description: 'Recovered from incomplete legacy or corrupted data.',
       clipIds: [],
       createdAt: FALLBACK_TIME,
       updatedAt: FALLBACK_TIME,
@@ -129,7 +136,7 @@ function normalizeCapturePayload(value: unknown): CapturePayload | undefined {
   return {
     originalText,
     platform,
-    conversationTitle: stringValue(value.conversationTitle, '恢复的摘录'),
+    conversationTitle: stringValue(value.conversationTitle, 'Recovered clip'),
     conversationUrl: stringValue(value.conversationUrl, ''),
     conversationId: stringValue(value.conversationId, ''),
     messageRole,
@@ -263,13 +270,25 @@ export async function deleteNotebook(notebookId: string): Promise<void> {
   });
 }
 
-export async function deleteClip(clipId: string): Promise<void> {
+export async function deleteClip(clipId: string): Promise<DeletedClipSnapshot | undefined> {
+  let snapshot: DeletedClipSnapshot | undefined;
   await updateState(state => {
     const clip = state.clips[clipId];
     if (!clip) return;
     const notebook = state.notebooks[clip.notebookId];
+    const childIds = Object.values(state.clips).filter(child => child.parentClipId === clipId).map(child => child.id);
+    snapshot = {
+      clip: structuredClone(clip),
+      index: Math.max(0, notebook?.clipIds.indexOf(clipId) ?? 0),
+      childIds,
+      position: notebook?.mindMapPositions?.[clipId] ? { ...notebook.mindMapPositions[clipId]! } : undefined
+    };
     if (notebook) {
       notebook.clipIds = notebook.clipIds.filter(id => id !== clipId);
+      if (notebook.mindMapPositions) {
+        delete notebook.mindMapPositions[clipId];
+        if (!Object.keys(notebook.mindMapPositions).length) delete notebook.mindMapPositions;
+      }
       notebook.updatedAt = new Date().toISOString();
     }
     for (const child of Object.values(state.clips)) {
@@ -277,6 +296,30 @@ export async function deleteClip(clipId: string): Promise<void> {
     }
     delete state.clips[clipId];
   });
+  return snapshot;
+}
+
+export async function restoreDeletedClip(snapshot: DeletedClipSnapshot): Promise<boolean> {
+  let restored = false;
+  await updateState(state => {
+    const notebook = state.notebooks[snapshot.clip.notebookId];
+    if (!notebook || state.clips[snapshot.clip.id]) return;
+    const clip = structuredClone(snapshot.clip);
+    if (clip.parentClipId && !state.clips[clip.parentClipId]) delete clip.parentClipId;
+    state.clips[clip.id] = clip;
+    const index = Math.min(Math.max(0, snapshot.index), notebook.clipIds.length);
+    notebook.clipIds.splice(index, 0, clip.id);
+    if (snapshot.position) {
+      notebook.mindMapPositions = { ...(notebook.mindMapPositions ?? {}), [clip.id]: { ...snapshot.position } };
+    }
+    for (const childId of snapshot.childIds) {
+      const child = state.clips[childId];
+      if (child?.notebookId === notebook.id && !child.parentClipId) child.parentClipId = clip.id;
+    }
+    notebook.updatedAt = new Date().toISOString();
+    restored = true;
+  });
+  return restored;
 }
 
 export async function updateClip(clipId: string, patch: { annotation?: string; highlightColor?: HighlightColor }): Promise<void> {

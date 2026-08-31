@@ -18,7 +18,7 @@ function reportRoot(element: HTMLElement): boolean {
 export const claudeAdapter: SiteAdapter = {
   platform: 'claude',
   isConversation: () => isSupportedConversationUrl(location.href, 'claude'),
-  metadata: () => ({ platform: 'claude', conversationTitle: titleFromPage('Claude 对话'), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
+  metadata: () => ({ platform: 'claude', conversationTitle: titleFromPage('Claude conversation'), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
   messageRoot,
   messageId: element => reportRoot(element) ? reportId(element) : (element.dataset.messageId ?? element.id) || undefined,
   messageRole: element => {

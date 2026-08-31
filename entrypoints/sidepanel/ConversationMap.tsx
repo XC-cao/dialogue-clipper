@@ -4,12 +4,14 @@ import {
   ReactFlow, type Edge, type Node, type NodeProps, type ReactFlowInstance
 } from '@xyflow/react';
 import {
-  conversationNodeLocator, isConversationGraphSnapshot,
+  conversationNodeLocator, findConversationNodeForClip, isConversationGraphSnapshot,
   type ConversationGraphNode,
   type ConversationGraphSnapshot
 } from '../../lib/conversation-graph';
 import type { ExtensionMessage } from '../../lib/messages';
-import { isSupportedConversationUrl } from '../../lib/conversation-url';
+import { isSameConversationUrl, isSupportedConversationUrl } from '../../lib/conversation-url';
+import type { Clip } from '../../lib/models';
+import { sendContentMessage } from '../../lib/tab-content';
 
 interface ConversationNodeData extends Record<string, unknown> {
   message: ConversationGraphNode;
@@ -25,12 +27,12 @@ const nodeTypes = { conversation: ConversationNodeCard };
 
 interface ConversationMapProps {
   onShowClips: (clipIds: string[]) => void;
-  focusClipId?: string;
+  focusClip?: Clip;
   targetTabId?: number;
   onFocusHandled: () => void;
 }
 
-export function ConversationMap({ onShowClips, focusClipId, targetTabId, onFocusHandled }: ConversationMapProps) {
+export function ConversationMap({ onShowClips, focusClip, targetTabId, onFocusHandled }: ConversationMapProps) {
   const [snapshot, setSnapshot] = useState<ConversationGraphSnapshot | null>(null);
   const [tabId, setTabId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,32 +63,34 @@ export function ConversationMap({ onShowClips, focusClipId, targetTabId, onFocus
       tabIdRef.current = tab?.id ?? null;
       conversationUrlRef.current = '';
       setSnapshot(null);
-      setError('请先打开 ChatGPT、Claude 或 Gemini 对话');
+      setError('Open a ChatGPT, Claude, or Gemini conversation first');
       setLoading(false);
       return;
     }
     const previousTabId = tabIdRef.current;
     if (previousTabId !== null && previousTabId !== tab.id) {
-      void chrome.tabs.sendMessage(previousTabId, { version: 1, type: 'STOP_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
+      void chrome.tabs.sendMessage(previousTabId, { version: 2, type: 'STOP_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
     }
     setTabId(tab.id);
     tabIdRef.current = tab.id;
     try {
-      await chrome.tabs.sendMessage(tab.id, { version: 1, type: 'START_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
-      const response = await chrome.tabs.sendMessage(tab.id, {
-        version: 1,
-        type: 'GET_CONVERSATION_GRAPH'
-      } satisfies ExtensionMessage) as ExtensionMessage;
+      await sendContentMessage(tab.id, { version: 2, type: 'START_CONVERSATION_GRAPH' }, 12);
+      let response: ExtensionMessage | undefined;
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        response = await sendContentMessage(tab.id, { version: 2, type: 'GET_CONVERSATION_GRAPH' }, 2);
+        if (response?.type === 'CONVERSATION_GRAPH_RESULT' && response.ok && isConversationGraphSnapshot(response.snapshot)) break;
+        await new Promise(resolve => window.setTimeout(resolve, 250));
+      }
       if (requestId !== requestIdRef.current || tabIdRef.current !== tab.id) return;
-      if (response.type !== 'CONVERSATION_GRAPH_RESULT' || !response.ok || !isConversationGraphSnapshot(response.snapshot)) {
-        throw new Error(response.type === 'CONVERSATION_GRAPH_RESULT' ? response.error : 'invalid response');
+      if (response?.type !== 'CONVERSATION_GRAPH_RESULT' || !response.ok || !isConversationGraphSnapshot(response.snapshot)) {
+        throw new Error(response?.type === 'CONVERSATION_GRAPH_RESULT' ? response.error : 'invalid response');
       }
       conversationUrlRef.current = response.snapshot.conversationUrl;
       setSnapshot(response.snapshot);
     } catch {
       if (requestId !== requestIdRef.current) return;
       setSnapshot(null);
-      setError('暂时无法读取对话，请刷新网页后重试');
+      setError('Unable to read this conversation yet. Wait for the page to finish loading, then try again.');
     } finally {
       setLoading(false);
     }
@@ -99,7 +103,7 @@ export function ConversationMap({ onShowClips, focusClipId, targetTabId, onFocus
       if (updatedTabId === tabIdRef.current && (change.status === 'complete' || change.url)) void refresh(updatedTabId);
     };
     const message = (value: ExtensionMessage, sender: chrome.runtime.MessageSender) => {
-      if (sender.tab?.id !== tabIdRef.current || value?.version !== 1) return;
+      if (sender.tab?.id !== tabIdRef.current || value?.version !== 2) return;
       if (value.type === 'CONVERSATION_GRAPH_UPDATED' && isConversationGraphSnapshot(value.snapshot) && value.snapshot.conversationUrl === conversationUrlRef.current) {
         setSnapshot(value.snapshot);
         setLoading(false);
@@ -115,7 +119,7 @@ export function ConversationMap({ onShowClips, focusClipId, targetTabId, onFocus
     };
     const heartbeat = window.setInterval(() => {
       const currentTabId = tabIdRef.current;
-      if (currentTabId !== null) void chrome.tabs.sendMessage(currentTabId, { version: 1, type: 'START_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
+      if (currentTabId !== null) void chrome.tabs.sendMessage(currentTabId, { version: 2, type: 'START_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
     }, 45_000);
     chrome.tabs.onActivated.addListener(activated);
     chrome.tabs.onUpdated.addListener(updated);
@@ -127,7 +131,7 @@ export function ConversationMap({ onShowClips, focusClipId, targetTabId, onFocus
       window.clearInterval(heartbeat);
       requestIdRef.current += 1;
       const currentTabId = tabIdRef.current;
-      if (currentTabId !== null) void chrome.tabs.sendMessage(currentTabId, { version: 1, type: 'STOP_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
+      if (currentTabId !== null) void chrome.tabs.sendMessage(currentTabId, { version: 2, type: 'STOP_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
     };
   }, [refresh]);
 
@@ -152,7 +156,7 @@ export function ConversationMap({ onShowClips, focusClipId, targetTabId, onFocus
       type: 'conversation',
       position: {
         x: message.role === 'user' ? 24 : message.role === 'assistant' ? 238 : 132,
-        y: index * 126 + 24
+        y: index * 150 + 24
       },
       sourcePosition: Position.Bottom,
       targetPosition: Position.Top,
@@ -180,7 +184,7 @@ export function ConversationMap({ onShowClips, focusClipId, targetTabId, onFocus
         target: node.id,
         type: 'smoothstep',
         deletable: false,
-        label: onlyClipped && omitted > 0 ? `省略 ${omitted} 条` : undefined,
+        label: onlyClipped && omitted > 0 ? `${omitted} omitted` : undefined,
         labelStyle: { fontSize: 9, fill: '#6d746f' },
         labelBgStyle: { fill: '#eef1ef', fillOpacity: .95 },
         labelBgPadding: [4, 2],
@@ -210,14 +214,19 @@ export function ConversationMap({ onShowClips, focusClipId, targetTabId, onFocus
   }, [focusNode, followPage, snapshot?.activeNodeId]);
 
   useEffect(() => {
-    if (!focusClipId || !snapshot) return;
-    const target = snapshot.nodes.find(node => node.clipIds.includes(focusClipId));
+    if (!focusClip || !snapshot) return;
+    const sameConversation = focusClip.platform === snapshot.platform && (
+      Boolean(focusClip.conversationId && focusClip.conversationId === snapshot.conversationId) ||
+      isSameConversationUrl(focusClip.conversationUrl, snapshot.conversationUrl)
+    );
+    if (!sameConversation) return;
+    const target = findConversationNodeForClip(snapshot.nodes, focusClip);
     if (!target || !instance) return;
     setFollowPage(false);
     setSelectedNodeId(target.id);
     window.setTimeout(() => focusNode(target.id), 30);
     onFocusHandled();
-  }, [focusClipId, focusNode, instance, onFocusHandled, snapshot]);
+  }, [focusClip, focusNode, instance, onFocusHandled, snapshot]);
 
   const matchSignature = matches.map(node => node.id).join('|');
   useEffect(() => {
@@ -240,38 +249,38 @@ export function ConversationMap({ onShowClips, focusClipId, targetTabId, onFocus
     setFollowPage(false);
     setInlineError('');
     await chrome.tabs.update(tabId, { active: true });
-    const response = await chrome.tabs.sendMessage(tabId, {
-      version: 1,
+    const response = await sendContentMessage(tabId, {
+      version: 2,
       type: 'SCROLL_TO_CONVERSATION_NODE',
       nodeId,
       conversationUrl: snapshot.conversationUrl,
       locator: conversationNodeLocator(message)
-    } satisfies ExtensionMessage).catch(() => undefined) as ExtensionMessage | undefined;
+    }, 12).catch(() => undefined);
     if (response?.type === 'SCROLL_TO_CONVERSATION_NODE_RESULT' && response.ok) {
       setSnapshot(current => current ? { ...current, activeNodeId: nodeId } : current);
       return;
     }
-    setInlineError('消息内容已经变化，请刷新对话图后重试');
+    setInlineError('This message has changed. Refresh the conversation map and try again.');
     await refresh(tabId);
   };
 
-  if (loading && !snapshot) return <ConversationState title="正在读取当前对话…" />;
-  if (error && !snapshot) return <ConversationState title={error} action="重新读取" onAction={() => void refresh()} />;
-  if (!snapshot || snapshot.nodes.length === 0) return <ConversationState title="当前页面还没有可导航的消息" action="重新读取" onAction={() => void refresh()} />;
+  if (loading && !snapshot) return <ConversationState title="Reading this conversation…" />;
+  if (error && !snapshot) return <ConversationState title={error} action="Try again" onAction={() => void refresh()} />;
+  if (!snapshot || snapshot.nodes.length === 0) return <ConversationState title="There are no messages to navigate on this page" action="Try again" onAction={() => void refresh()} />;
 
-  return <section className="conversation-map" aria-label="当前对话导航图">
+  return <section className="conversation-map" aria-label="Current conversation map">
     <div className="conversation-map-head">
-      <div><strong>{snapshot.conversationTitle}</strong><span>{snapshot.nodes.length} 条消息 · 当前可见路径</span></div>
-      <button onClick={() => void refresh()}>刷新</button>
-      <button onClick={() => void instance?.fitView({ padding: .2, duration: 300 })}>全览</button>
+      <div><strong>{snapshot.conversationTitle}</strong><span>{snapshot.nodes.length} {snapshot.nodes.length === 1 ? 'message' : 'messages'} · visible path</span></div>
+      <button onClick={() => void refresh()}>Refresh</button>
+      <button onClick={() => void instance?.fitView({ padding: .2, duration: 300 })}>Overview</button>
     </div>
-    <div className="conversation-filters" role="group" aria-label="消息范围">
-      <button className={!onlyClipped ? 'active' : ''} onClick={() => setOnlyClipped(false)}>全部消息</button>
-      <button className={onlyClipped ? 'active' : ''} onClick={() => setOnlyClipped(true)}>仅看摘录 <span>{snapshot.nodes.filter(node => node.clipIds.length).length}</span></button>
-      <button className={followPage ? 'follow active' : 'follow'} onClick={() => setFollowPage(value => !value)}>跟随网页</button>
+    <div className="conversation-filters" role="group" aria-label="Message range">
+      <button className={!onlyClipped ? 'active' : ''} onClick={() => setOnlyClipped(false)}>All messages</button>
+      <button className={onlyClipped ? 'active' : ''} onClick={() => setOnlyClipped(true)}>Clipped only <span>{snapshot.nodes.filter(node => node.clipIds.length).length}</span></button>
+      <button className={followPage ? 'follow active' : 'follow'} onClick={() => setFollowPage(value => !value)}>Follow page</button>
     </div>
     <div className="conversation-search">
-      <input value={query} placeholder="搜索当前对话" aria-label="搜索当前对话" onChange={event => setQuery(event.target.value)} onKeyDown={event => {
+      <input value={query} placeholder="Search this conversation" aria-label="Search this conversation" onChange={event => setQuery(event.target.value)} onKeyDown={event => {
         if (event.key === 'Enter') moveMatch(event.shiftKey ? -1 : 1);
       }} />
       {normalizedQuery && <><span>{matches.length ? `${matchIndex + 1}/${matches.length}` : '0'}</span><button disabled={!matches.length} onClick={() => moveMatch(-1)}>↑</button><button disabled={!matches.length} onClick={() => moveMatch(1)}>↓</button></>}
@@ -303,7 +312,7 @@ export function ConversationMap({ onShowClips, focusClipId, targetTabId, onFocus
         <Controls showInteractive={false} />
       </ReactFlow>
     </div>
-    <p className="map-help">只读取网页当前可见路径，不保存完整对话。单击节点返回消息；带“摘录”徽标的节点可切换到摘录图。</p>
+    <p className="map-help">Only the path currently visible on the page is read; the full conversation is not saved. Click a node to open its message. Nodes with a “Clips” badge can open the clip map.</p>
   </section>;
 }
 
@@ -312,16 +321,17 @@ function ConversationNodeCard({ data }: NodeProps<ConversationFlowNode>) {
   return <div className={`conversation-node-card${data.active ? ' is-active' : ''}${data.matched ? ' is-match' : ''}${data.dimmed ? ' is-dimmed' : ''}`}>
     <Handle type="target" position={Position.Top} />
     <div className="conversation-node-meta">
-      <span>{message.role === 'user' ? '我' : message.role === 'assistant' ? 'AI' : '内容'} · {message.order + 1}</span>
-      {message.isReport && <i>报告</i>}
-      {message.branch && <i>分支 {message.branch.index}/{message.branch.count}</i>}
-      {data.active && <i className="current">当前</i>}
+      <span>{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'AI' : 'Content'} · {message.order + 1}</span>
+      {message.isReport && <i>Report</i>}
+      {message.branch && <i>Branch {message.branch.index}/{message.branch.count}</i>}
+      {data.active && <i className="current">Current</i>}
     </div>
-    <strong>{message.text || '空消息'}</strong>
+    <strong className="conversation-node-title">{message.title}</strong>
+    <p className="conversation-node-preview">{message.text || 'Empty message'}</p>
     {message.clipIds.length > 0 && <button className="conversation-clip-badge nodrag" onClick={event => {
       event.stopPropagation();
       data.onShowClips(message.clipIds);
-    }}>摘录 {message.clipIds.length} →</button>}
+    }}>Clips {message.clipIds.length} →</button>}
     <Handle type="source" position={Position.Bottom} />
   </div>;
 }

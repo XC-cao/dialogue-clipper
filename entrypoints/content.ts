@@ -3,12 +3,13 @@ import { currentAdapter } from '../lib/adapters';
 import { resolveFloatingPosition, type RectLike } from '../lib/floating-position';
 import { chooseHighlightSurface, type HighlightSurface } from '../lib/highlight-theme';
 import {
-  attachClipsToConversationNodes, buildConversationSnapshot, conversationNodeId, conversationTextFingerprint, parseBranchInfo,
+  attachClipsToConversationNodes, buildConversationSnapshot, conversationNodeId, conversationTextFingerprint, generateConversationNodeTitle, parseBranchInfo,
   type ConversationGraphNode, type ConversationGraphSnapshot, type ConversationNodeLocator
 } from '../lib/conversation-graph';
 import type { Clip, HighlightColor } from '../lib/models';
 import type { ExtensionMessage } from '../lib/messages';
 import { loadState } from '../lib/storage';
+import { isSameConversationUrl } from '../lib/conversation-url';
 
 const BUTTON_ID = 'dialogue-clipper-capture';
 const STYLE_ID = 'dialogue-clipper-styles';
@@ -89,11 +90,11 @@ export default defineContentScript({
     const capture = async () => {
       const selection = window.getSelection();
       const range = selection && !selection.isCollapsed && selection.rangeCount ? selection.getRangeAt(0).cloneRange() : lastRange;
-      if (!range) return toast('请先在消息或报告中选择文字', 'error');
+      if (!range) return toast('Select text in a message or report first', 'error');
       const message = activeAdapter.messageRoot(range.startContainer);
-      if (!message || message !== activeAdapter.messageRoot(range.endContainer)) return toast('暂不支持跨消息或跨报告摘录', 'error');
+      if (!message || message !== activeAdapter.messageRoot(range.endContainer)) return toast('Clipping across multiple messages or reports is not supported', 'error');
       const originalText = range.toString();
-      if (!originalText.trim()) return toast('选区为空', 'error');
+      if (!originalText.trim()) return toast('The selection is empty', 'error');
       const role = activeAdapter.messageRole(message);
       const metadata = activeAdapter.metadata();
       const anchor = createAnchor(range, message, role, activeAdapter.messageId(message));
@@ -105,16 +106,16 @@ export default defineContentScript({
           payload: { originalText, ...metadata, messageRole: role, anchor }
         } satisfies ExtensionMessage) as ExtensionMessage;
       } catch {
-        return toast('摘录失败，请刷新页面后重试', 'error');
+        return toast('Unable to save the clip. Reload the page and try again.', 'error');
       }
       hideButton();
       selection?.removeAllRanges();
-      if (response.type !== 'CAPTURE_RESULT' || !response.ok) return toast('摘录失败，请重试', 'error');
+      if (response.type !== 'CAPTURE_RESULT' || !response.ok) return toast('Unable to save the clip. Try again.', 'error');
       if (response.clip) {
         highlightClip(response.clip);
-        toast('已加入当前笔记');
+        toast('Added to the current notebook');
       } else {
-        toast('请选择笔记以保存摘录');
+        toast('Select a notebook to save this clip');
       }
     };
 
@@ -150,12 +151,12 @@ export default defineContentScript({
     };
 
     const scanConversationGraph = async (): Promise<ConversationGraphSnapshot> => {
-      if (!activeAdapter.isConversation()) throw new Error('当前页面不是受支持的对话');
+      if (!activeAdapter.isConversation()) throw new Error('This page is not a supported conversation');
       const generation = pageGeneration;
       const state = await loadState();
-      if (generation !== pageGeneration || !activeAdapter.isConversation()) throw new Error('页面已切换');
+      if (generation !== pageGeneration || !activeAdapter.isConversation()) throw new Error('The page changed');
       const metadata = activeAdapter.metadata();
-      const pageClips = Object.values(state.clips).filter(clip => clip.conversationUrl === metadata.conversationUrl);
+      const pageClips = Object.values(state.clips).filter(clip => clipMatchesConversation(clip, metadata));
       const elements = new Map<string, HTMLElement>();
       const fullTextByNodeId = new Map<string, string>();
       const rawNodes: ConversationGraphNode[] = [];
@@ -179,6 +180,7 @@ export default defineContentScript({
           id,
           messageId,
           role,
+          title: generateConversationNodeTitle(fullText),
           text: searchText.length > 420 ? `${searchText.slice(0, 419)}…` : searchText,
           searchText,
           fingerprint: conversationTextFingerprint(searchText),
@@ -188,7 +190,7 @@ export default defineContentScript({
           isReport: Boolean(messageId?.startsWith('report:'))
         });
       }
-      if (generation !== pageGeneration || metadata.conversationUrl !== activeAdapter.metadata().conversationUrl) throw new Error('页面已切换');
+      if (generation !== pageGeneration || metadata.conversationUrl !== activeAdapter.metadata().conversationUrl) throw new Error('The page changed');
       const nodes = attachClipsToConversationNodes(rawNodes, pageClips, fullTextByNodeId);
       conversationNodeElements = elements;
       conversationNodeUrl = metadata.conversationUrl;
@@ -216,7 +218,7 @@ export default defineContentScript({
           return;
         }
         lastConversationRevision = snapshot.revision;
-        await chrome.runtime.sendMessage({ version: 1, type: 'CONVERSATION_GRAPH_UPDATED', snapshot } satisfies ExtensionMessage).catch(() => undefined);
+        await chrome.runtime.sendMessage({ version: 2, type: 'CONVERSATION_GRAPH_UPDATED', snapshot } satisfies ExtensionMessage).catch(() => undefined);
       } catch {
         // The page may be replacing a message while the scan is running.
       }
@@ -228,7 +230,7 @@ export default defineContentScript({
       if (nodeId === lastActiveNodeId) return;
       lastActiveNodeId = nodeId;
       void chrome.runtime.sendMessage({
-        version: 1,
+        version: 2,
         type: 'CONVERSATION_ACTIVE_NODE',
         conversationUrl: activeAdapter.metadata().conversationUrl,
         nodeId
@@ -241,8 +243,8 @@ export default defineContentScript({
         document.querySelectorAll<HTMLElement>(`[${HIGHLIGHT_ATTR}]`).forEach(unwrapHighlight);
         if (!activeAdapter.isConversation()) return;
         const state = await loadState();
-        const url = activeAdapter.metadata().conversationUrl;
-        const pageClips = Object.values(state.clips).filter(clip => clip.conversationUrl === url);
+        const metadata = activeAdapter.metadata();
+        const pageClips = Object.values(state.clips).filter(clip => clipMatchesConversation(clip, metadata));
         const statuses = new Map(pageClips.map(clip => [clip.id, highlightClip(clip) ? 'resolved' : 'unresolved'] as const));
         if (pageClips.some(clip => clip.anchor.status !== statuses.get(clip.id))) {
           await chrome.runtime.sendMessage({ version: 1, type: 'UPDATE_ANCHOR_STATUSES', statuses: Object.fromEntries(statuses) } satisfies ExtensionMessage);
@@ -253,35 +255,41 @@ export default defineContentScript({
     };
 
     const scrollToClip = async (clipId: string): Promise<{ ok: boolean; exact: boolean }> => {
-      await refreshHighlights();
-      const marks = Array.from(document.querySelectorAll<HTMLElement>(`[${HIGHLIGHT_ATTR}="${CSS.escape(clipId)}"]`));
-      if (marks.length) {
-        marks[0]!.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-        marks.forEach(pulseElement);
-        toast('已返回原文位置');
-        return { ok: true, exact: true };
-      }
-
       const state = await loadState();
       const clip = state.clips[clipId];
-      if (!clip || clip.conversationUrl !== activeAdapter.metadata().conversationUrl) {
-        toast('未能在当前对话中找到原文', 'error');
+      if (!clip || !clipMatchesConversation(clip, activeAdapter.metadata())) {
+        toast('The source text was not found in this conversation', 'error');
         return { ok: false, exact: false };
       }
-      const message = activeAdapter.findMessage(clip.anchor.messageId)
-        ?? findUniqueMessage(clip.anchor.exact, clip.messageRole);
-      if (!message) {
-        toast('原网页内容已变化，暂时无法定位', 'error');
-        return { ok: false, exact: false };
+
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        highlightClip(clip);
+        const marks = Array.from(document.querySelectorAll<HTMLElement>(`[${HIGHLIGHT_ATTR}="${CSS.escape(clipId)}"]`));
+        if (marks.length) {
+          marks[0]!.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+          marks.forEach(pulseElement);
+          toast('Opened the source text');
+          return { ok: true, exact: true };
+        }
+        const message = activeAdapter.findMessage(clip.anchor.messageId)
+          ?? findUniqueMessage(clip.anchor.exact, clip.messageRole);
+        if (message) {
+          message.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+          pulseElement(message);
+          toast('Opened the source message, but the exact text could not be located', 'error');
+          return { ok: true, exact: false };
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 250));
       }
-      message.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-      pulseElement(message);
-      toast('未能精确定位，已返回原消息', 'error');
-      return { ok: true, exact: false };
+      toast('The page content has changed, so the source cannot be located', 'error');
+      return { ok: false, exact: false };
     };
 
     chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
-      if (message?.version !== 1) return;
+      if (!message || (message.version !== 1 && message.version !== 2)) return;
+      const navigationMessage = message.type === 'START_CONVERSATION_GRAPH' || message.type === 'STOP_CONVERSATION_GRAPH' ||
+        message.type === 'GET_CONVERSATION_GRAPH' || message.type === 'SCROLL_TO_CONVERSATION_NODE' || message.type === 'SCROLL_TO_CLIP';
+      if (navigationMessage && message.version !== 2) return;
       if (message.type === 'START_CONVERSATION_GRAPH') {
         graphLeaseUntil = Date.now() + GRAPH_LEASE_MS;
         scheduleConversationRefresh(0);
@@ -298,12 +306,12 @@ export default defineContentScript({
       if (message.type === 'GET_CONVERSATION_GRAPH') {
         graphLeaseUntil = Date.now() + GRAPH_LEASE_MS;
         void getConversationGraph().then(snapshot => sendResponse({
-          version: 1,
+          version: 2,
           type: 'CONVERSATION_GRAPH_RESULT',
           ok: true,
           snapshot
         } satisfies ExtensionMessage)).catch(error => sendResponse({
-          version: 1,
+          version: 2,
           type: 'CONVERSATION_GRAPH_RESULT',
           ok: false,
           error: String(error)
@@ -312,7 +320,7 @@ export default defineContentScript({
       }
       if (message.type === 'SCROLL_TO_CONVERSATION_NODE') {
         void scrollToConversationNode(message.nodeId, message.conversationUrl, message.locator).then(ok => sendResponse({
-          version: 1,
+          version: 2,
           type: 'SCROLL_TO_CONVERSATION_NODE_RESULT',
           ok
         } satisfies ExtensionMessage));
@@ -322,7 +330,7 @@ export default defineContentScript({
       if (message.type === 'REFRESH_HIGHLIGHTS') scheduleRefresh(0);
       if (message.type === 'SCROLL_TO_CLIP') {
         void scrollToClip(message.clipId).then(result => sendResponse({
-          version: 1,
+          version: 2,
           type: 'SCROLL_TO_CLIP_RESULT',
           ...result
         } satisfies ExtensionMessage));
@@ -374,7 +382,7 @@ export default defineContentScript({
         mark.setAttribute(HIGHLIGHT_ATTR, clip.id);
         mark.dataset.color = clip.highlightColor;
         mark.dataset.surface = detectHighlightSurface(located.node.parentElement ?? root);
-        mark.title = '点击在侧栏中查看摘录';
+        mark.title = 'Open this clip in the sidebar';
         const range = document.createRange();
         range.setStart(located.node, located.start);
         range.setEnd(located.node, located.end);
@@ -382,6 +390,13 @@ export default defineContentScript({
         mark.addEventListener('click', () => void chrome.runtime.sendMessage({ version: 1, type: 'FOCUS_CLIP', clipId: clip.id } satisfies ExtensionMessage));
       }
       return true;
+    }
+
+    function clipMatchesConversation(clip: Clip, metadata: ReturnType<typeof activeAdapter.metadata>): boolean {
+      return clip.platform === metadata.platform && (
+        Boolean(clip.conversationId && clip.conversationId === metadata.conversationId) ||
+        isSameConversationUrl(clip.conversationUrl, metadata.conversationUrl)
+      );
     }
 
     function findUniqueMessage(exact: string, role: Clip['messageRole']): HTMLElement | null {
@@ -424,7 +439,7 @@ export default defineContentScript({
       conversationNodeElements.clear();
       conversationNodeUrl = '';
       void chrome.runtime.sendMessage({
-        version: 1,
+        version: 2,
         type: 'CONVERSATION_GRAPH_CLEARED',
         conversationUrl: activeAdapter.metadata().conversationUrl
       } satisfies ExtensionMessage).catch(() => undefined);
@@ -442,7 +457,7 @@ function createCaptureButton(): HTMLButtonElement {
   const button = document.createElement('button');
   button.id = BUTTON_ID;
   button.type = 'button';
-  button.textContent = '摘录';
+  button.textContent = 'Clip';
   button.hidden = true;
   document.documentElement.append(button);
   return button;

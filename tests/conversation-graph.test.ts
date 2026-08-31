@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   attachClipsToConversationNodes, buildConversationSnapshot, conversationNodeId,
-  conversationTextFingerprint, isConversationGraphSnapshot, parseBranchInfo, type ConversationGraphNode
+  conversationTextFingerprint, findConversationNodeForClip, generateConversationNodeTitle, isConversationGraphSnapshot, parseBranchInfo, type ConversationGraphNode
 } from '../lib/conversation-graph';
 import type { Clip } from '../lib/models';
 
 const node = (id: string, order: number): ConversationGraphNode => ({
-  id, order, messageId: id, role: order % 2 ? 'assistant' : 'user', text: id,
+  id, order, messageId: id, role: order % 2 ? 'assistant' : 'user', title: id, text: id,
   searchText: id, fingerprint: conversationTextFingerprint(id), clipIds: [], isReport: false
 });
 
@@ -39,6 +39,13 @@ describe('conversation graph', () => {
     expect(attachClipsToConversationNodes(nodes, clips).map(item => item.clipIds)).toEqual([['one'], ['two']]);
   });
 
+  it('从摘录回到对话图时可用关联、消息标识或唯一原文定位', () => {
+    const targetClip = clip('one', 'm1', '关键结论');
+    const byId = { ...node('a', 0), messageId: 'm1', role: 'assistant' as const, searchText: '内容已经被编辑' };
+    expect(findConversationNodeForClip([byId], targetClip)?.id).toBe('a');
+    expect(findConversationNodeForClip([{ ...byId, messageId: undefined, searchText: '正文包含关键结论' }], targetClip)?.id).toBe('a');
+  });
+
   it('重复原文无法唯一确定消息时不误关联摘录', () => {
     const clips = [clip('one', 'missing', '重复片段')];
     const nodes = [
@@ -52,6 +59,12 @@ describe('conversation graph', () => {
     expect(conversationNodeId('c1', 'm1', 'assistant', 2)).toBe(conversationNodeId('c1', 'm1', 'assistant', 9));
     document.body.innerHTML = '<article><div class="message">回答</div><button aria-label="Response 2 of 3">2 / 3</button></article>';
     expect(parseBranchInfo(document.querySelector('.message') as HTMLElement)).toEqual({ index: 2, count: 3 });
+  });
+
+  it('优先使用 Markdown 标题，并从普通消息生成简短标题', () => {
+    expect(generateConversationNodeTitle('当然可以！\n\n## 状态同步的根本原因\n正文内容')).toBe('状态同步的根本原因');
+    expect(generateConversationNodeTitle('请帮我分析这段代码为什么会报错，并给出一个可以直接运行的修复方案。后续内容')).toBe('请帮我分析这段代码为什么会报错…');
+    expect(generateConversationNodeTitle('```ts\nconst value = 1;\n```')).toBe('const value = 1');
   });
 
   it('长消息后半段仍能关联摘录，错误分支不会仅凭轮次标识误关联', () => {

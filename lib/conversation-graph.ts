@@ -10,6 +10,8 @@ export interface ConversationGraphNode {
   id: string;
   messageId?: string;
   role: MessageRole;
+  /** Locally generated short title used to scan the map quickly. */
+  title: string;
   /** Short text rendered on the map card. */
   text: string;
   /** Search/association text kept only in the in-memory graph snapshot. */
@@ -55,6 +57,7 @@ export interface ConversationNodeLocator {
 const MAX_NODES = 600;
 const MAX_NODE_SEARCH_TEXT = 20_000;
 const MAX_SNAPSHOT_TEXT = 2_000_000;
+const MAX_NODE_TITLE_LENGTH = 24;
 
 export function conversationNodeId(conversationId: string, messageId: string | undefined, role: MessageRole, order: number): string {
   const stablePart = messageId ? `id:${messageId}` : `position:${role}:${order}`;
@@ -63,6 +66,27 @@ export function conversationNodeId(conversationId: string, messageId: string | u
 
 export function conversationTextFingerprint(text: string): string {
   return stableHash(normalizeGraphText(text));
+}
+
+/**
+ * Produces a compact title without sending conversation text anywhere. Markdown
+ * headings win; otherwise the first meaningful sentence is used.
+ */
+export function generateConversationNodeTitle(value: string): string {
+  const lines = value.replace(/\r/g, '').split('\n');
+  const heading = lines.slice(0, 24)
+    .map(line => line.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/)?.[1])
+    .find(Boolean);
+  const candidates = heading ? [heading] : lines;
+  for (const candidate of candidates) {
+    let text = cleanTitleText(candidate ?? '');
+    if (!text) continue;
+    text = text.replace(/^(?:sure|certainly|of course|absolutely|okay|yes|当然(?:可以)?|好的?|没问题|明白了|可以)[！!，,。.:：\s]+/i, '').trim();
+    if (!text) continue;
+    const sentence = text.split(/[。！？!?；;]\s*/)[0]?.trim() ?? text;
+    if (sentence) return truncateTitle(sentence);
+  }
+  return 'Empty message';
 }
 
 export function conversationNodeLocator(node: ConversationGraphNode): ConversationNodeLocator {
@@ -95,6 +119,19 @@ export function attachClipsToConversationNodes(
     clipIds.get(candidates[0]!.id)!.push(clip.id);
   }
   return nodes.map(node => ({ ...node, clipIds: clipIds.get(node.id) ?? [] }));
+}
+
+export function findConversationNodeForClip(nodes: ConversationGraphNode[], clip: Clip): ConversationGraphNode | undefined {
+  const attached = nodes.filter(node => node.clipIds.includes(clip.id));
+  if (attached.length === 1) return attached[0];
+  const byMessageId = clip.anchor.messageId
+    ? nodes.filter(node => node.messageId === clip.anchor.messageId)
+    : [];
+  if (byMessageId.length === 1) return byMessageId[0];
+  const exact = normalizeGraphText(clip.anchor.exact);
+  if (!exact) return undefined;
+  const byText = nodes.filter(node => node.role === clip.messageRole && normalizeGraphText(node.searchText).includes(exact));
+  return byText.length === 1 ? byText[0] : undefined;
 }
 
 export function buildConversationSnapshot(
@@ -150,6 +187,7 @@ export function isConversationGraphSnapshot(value: unknown): value is Conversati
     typeof node.id === 'string' && node.id.length <= 512 &&
     (node.messageId === undefined || (typeof node.messageId === 'string' && node.messageId.length <= 512)) &&
     ['user', 'assistant', 'unknown'].includes(String(node.role)) &&
+    typeof node.title === 'string' && node.title.length > 0 && node.title.length <= 80 &&
     typeof node.text === 'string' && node.text.length <= 800 &&
     typeof node.searchText === 'string' && node.searchText.length <= MAX_NODE_SEARCH_TEXT &&
     typeof node.fingerprint === 'string' && node.fingerprint.length <= 512 &&
@@ -193,6 +231,25 @@ export function parseBranchInfo(element: HTMLElement): ConversationBranchInfo | 
 
 function normalizeGraphText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function cleanTitleText(value: string): string {
+  return value
+    .replace(/^\s*(?:```.*|~~~.*)$/, '')
+    .replace(/^\s*(?:>\s*)?(?:[-*+]\s+|\d+[.)、]\s*)?/, '')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[*_~`]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function truncateTitle(value: string): string {
+  const characters = Array.from(value);
+  if (characters.length <= MAX_NODE_TITLE_LENGTH) return value;
+  const shortened = characters.slice(0, MAX_NODE_TITLE_LENGTH).join('');
+  const boundary = Math.max(shortened.lastIndexOf('，'), shortened.lastIndexOf(','), shortened.lastIndexOf(' '));
+  return `${(boundary >= 12 ? shortened.slice(0, boundary) : shortened).trim()}…`;
 }
 
 function stableHash(value: string): string {

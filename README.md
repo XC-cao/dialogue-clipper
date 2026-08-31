@@ -1,6 +1,6 @@
 # 对话摘录 Dialogue Clipper
 
-一个本地优先的 Chrome 扩展：从 ChatGPT、Claude 和 Gemini 选择原文、添加自己的批注，用对话图与摘录图定位长对话，并导出可长期保存的 Markdown 笔记。
+一个本地优先的浏览器扩展：从 ChatGPT、Claude 和 Gemini 选择原文、添加自己的批注，用对话图与摘录图定位长对话，并导出可长期保存的 Markdown 笔记。
 
 > v0.1 不总结、不润色，也不上传你的对话。原文是证据，批注属于你。
 
@@ -17,7 +17,7 @@
 - 支持摘录 ChatGPT、Claude 与 Gemini 生成的研究报告正文（包括全屏报告、成果视图和 Canvas）。
 - 对话导航图按网页当前可见路径展示“我 / AI”消息，支持搜索、当前阅读位置跟随和单击跳回网页。
 - 对话节点显示关联摘录数量，可一键切换到对应摘录图；摘录图节点也能反向定位到对话消息。
-- 摘录卡片可建立父子连接；导图采用 React Flow + Dagre，支持节点拖动、画布平移、缩放、自动布局、拖线改层级及双击返回原文。
+- 摘录卡片可建立父子连接；导图采用 React Flow + Dagre，支持节点拖动、画布平移、缩放、自动布局、拖线改层级、完整摘录详情、删除与撤销节点及双击返回原文。
 - 在侧栏添加批注、拖拽排序、切换四种高亮颜色。
 - 刷新页面后尽力恢复高亮；无法唯一定位时绝不猜测。
 - 实时预览、复制或下载“原文证据型” Markdown。
@@ -31,7 +31,7 @@
 | Claude | `claude.ai` | 支持 |
 | Gemini | `gemini.google.com` | 支持 |
 
-目标浏览器为 Chrome 116+。暂不支持普通网页、图片、附件、整页剪藏、云同步、AI 总结及 Firefox/Safari。
+目标浏览器为 Chrome 116+ 与 macOS Safari 14+。Safari 使用工具栏弹出页；从网页高亮点击跳转时，若弹出页无法由后台直接唤起，会打开一个扩展工作区标签页。暂不支持普通网页、图片、附件、整页剪藏、云同步、AI 总结及 Safari iOS/Firefox。
 
 ## 安装
 
@@ -60,6 +60,24 @@ npm run build
 ```bash
 npm run dev
 ```
+
+构建 Safari Web Extension 资源：
+
+```bash
+npm run build:safari
+```
+
+产物位于 `.output/safari-mv2`。在 macOS Safari 中临时测试：打开 Safari 设置的“开发”页，选择“添加临时扩展”，加载该目录。需要生成可签名的 macOS/iOS 容器时，在 macOS 上运行：
+
+```bash
+xcrun safari-web-extension-packager .output/safari-mv2 \
+  --project-location safari-app \
+  --app-name "Dialogue Clipper" \
+  --bundle-identifier "com.example.dialogue-clipper" \
+  --macos-only --no-open
+```
+
+`com.example.dialogue-clipper` 仅为示例，发布前应替换为自己的反向域名标识。
 
 ## 使用
 
@@ -96,6 +114,7 @@ npm run typecheck
 npm test
 npm run build
 npm run zip
+npm run build:safari
 ```
 
 站点相关 DOM 逻辑位于独立适配器中，脱敏固件位于 `tests/fixtures`。网站改版时应只修改相应适配器并更新其测试固件。
@@ -108,6 +127,7 @@ entrypoints/
   content.ts            选区按钮、高亮恢复与临时对话图扫描
   sidepanel/            React 侧栏界面
 lib/
+  extension-platform.ts Safari/Chrome API 差异与能力回退
   adapters/             ChatGPT / Claude / Gemini 适配器
   anchors.ts            文本锚点与安全定位
   conversation-graph.ts 对话图快照、摘录关联与歧义保护

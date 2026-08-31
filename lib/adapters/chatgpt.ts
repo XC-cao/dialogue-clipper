@@ -20,7 +20,7 @@ function reportRoot(element: HTMLElement): boolean {
 export const chatgptAdapter: SiteAdapter = {
   platform: 'chatgpt',
   isConversation: () => isSupportedConversationUrl(location.href, 'chatgpt'),
-  metadata: () => ({ platform: 'chatgpt', conversationTitle: titleFromPage('ChatGPT 对话'), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
+  metadata: () => ({ platform: 'chatgpt', conversationTitle: titleFromPage('ChatGPT conversation'), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
   messageRoot,
   messageId: element => reportRoot(element)
     ? reportId(element)

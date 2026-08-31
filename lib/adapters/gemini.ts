@@ -23,7 +23,7 @@ function reportRoot(element: HTMLElement): boolean {
 export const geminiAdapter: SiteAdapter = {
   platform: 'gemini',
   isConversation: () => isSupportedConversationUrl(location.href, 'gemini'),
-  metadata: () => ({ platform: 'gemini', conversationTitle: titleFromPage('Gemini 对话'), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
+  metadata: () => ({ platform: 'gemini', conversationTitle: titleFromPage('Gemini conversation'), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
   messageRoot,
   messageId: element => reportRoot(element) ? reportId(element) : (element.dataset.messageId ?? element.id) || undefined,
   messageRole: element => {

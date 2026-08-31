@@ -6,19 +6,19 @@ export type ExtensionMessage =
   | { version: 1; type: 'CAPTURE_CURRENT_SELECTION' }
   | { version: 1; type: 'CAPTURE_RESULT'; ok: boolean; clip?: Clip; pending?: boolean; error?: string }
   | { version: 1; type: 'REFRESH_HIGHLIGHTS' }
-  | { version: 1; type: 'SCROLL_TO_CLIP'; clipId: string }
-  | { version: 1; type: 'SCROLL_TO_CLIP_RESULT'; ok: boolean; exact: boolean }
+  | { version: 2; type: 'SCROLL_TO_CLIP'; clipId: string }
+  | { version: 2; type: 'SCROLL_TO_CLIP_RESULT'; ok: boolean; exact: boolean }
   | { version: 1; type: 'UPDATE_ANCHOR_STATUSES'; statuses: Record<string, 'resolved' | 'unresolved'> }
   | { version: 1; type: 'FOCUS_CLIP'; clipId: string }
-  | { version: 1; type: 'START_CONVERSATION_GRAPH' }
-  | { version: 1; type: 'STOP_CONVERSATION_GRAPH' }
-  | { version: 1; type: 'GET_CONVERSATION_GRAPH' }
-  | { version: 1; type: 'CONVERSATION_GRAPH_RESULT'; ok: boolean; snapshot?: ConversationGraphSnapshot; error?: string }
-  | { version: 1; type: 'CONVERSATION_GRAPH_UPDATED'; snapshot: ConversationGraphSnapshot }
-  | { version: 1; type: 'CONVERSATION_GRAPH_CLEARED'; conversationUrl: string }
-  | { version: 1; type: 'CONVERSATION_ACTIVE_NODE'; conversationUrl: string; nodeId?: string }
-  | { version: 1; type: 'SCROLL_TO_CONVERSATION_NODE'; nodeId: string; conversationUrl: string; locator: ConversationNodeLocator }
-  | { version: 1; type: 'SCROLL_TO_CONVERSATION_NODE_RESULT'; ok: boolean };
+  | { version: 2; type: 'START_CONVERSATION_GRAPH' }
+  | { version: 2; type: 'STOP_CONVERSATION_GRAPH' }
+  | { version: 2; type: 'GET_CONVERSATION_GRAPH' }
+  | { version: 2; type: 'CONVERSATION_GRAPH_RESULT'; ok: boolean; snapshot?: ConversationGraphSnapshot; error?: string }
+  | { version: 2; type: 'CONVERSATION_GRAPH_UPDATED'; snapshot: ConversationGraphSnapshot }
+  | { version: 2; type: 'CONVERSATION_GRAPH_CLEARED'; conversationUrl: string }
+  | { version: 2; type: 'CONVERSATION_ACTIVE_NODE'; conversationUrl: string; nodeId?: string }
+  | { version: 2; type: 'SCROLL_TO_CONVERSATION_NODE'; nodeId: string; conversationUrl: string; locator: ConversationNodeLocator }
+  | { version: 2; type: 'SCROLL_TO_CONVERSATION_NODE_RESULT'; ok: boolean };
 
 export function isCapturePayload(value: unknown): value is CapturePayload {
   if (!value || typeof value !== 'object') return false;

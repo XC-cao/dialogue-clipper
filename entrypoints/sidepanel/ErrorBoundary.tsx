@@ -15,9 +15,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     if (!this.state.failed) return this.props.children;
     return <main className="panel-fallback">
       <div>!</div>
-      <strong>侧栏暂时无法显示</strong>
-      <p>你的本地摘录仍然保留。请先重新加载扩展；若问题持续，可在扩展详情中查看错误。</p>
-      <button className="primary" onClick={() => location.reload()}>重新加载侧栏</button>
+      <strong>The sidebar could not be displayed</strong>
+      <p>Your local clips are still safe. Reload the extension first. If the problem continues, check the extension details for errors.</p>
+      <button className="primary" onClick={() => location.reload()}>Reload sidebar</button>
     </main>;
   }
 }

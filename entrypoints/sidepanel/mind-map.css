@@ -10,63 +10,128 @@
 .parent-picker select {
   min-width: 0;
   flex: 1;
-  border: 1px solid #e0ddd6;
-  border-radius: 7px;
-  background: #faf9f6;
+  border: 1px solid #d8d0c5;
+  border-radius: 3px;
+  background: #fffdf8;
   padding: 5px 7px;
   color: #4b4943;
   font-size: 10px;
 }
-.mind-map { margin: 0 -16px; }
+
+.mind-map {
+  margin: 0 -16px;
+  background: #f7f4ee;
+  color: #1f1c18;
+}
 .map-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 12px 9px;
+  padding: 2px 16px 12px;
+  border-bottom: 1px solid #d8d0c5;
+  background: #f7f4ee;
 }
-.map-toolbar div { min-width: 0; flex: 1; display: flex; flex-direction: column; }
-.map-toolbar strong { font-size: 11px; color: #45423d; }
-.map-toolbar span { color: #8a857d; font-size: 9px; }
-.map-toolbar button { padding: 5px 7px; border-radius: 6px; font-size: 9px; white-space: nowrap; }
+.map-toolbar div {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.map-toolbar strong {
+  color: #1f1c18;
+  font: 600 13px/1.15 Georgia, "Songti SC", serif;
+}
+.map-toolbar span {
+  color: #7b756c;
+  font: 8px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .04em;
+}
+.map-toolbar button {
+  padding: 6px 8px;
+  border: 1px solid #bdb5a9;
+  border-radius: 3px;
+  background: transparent;
+  color: #4f4941;
+  font: 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+.map-toolbar button:hover:not(:disabled) {
+  border-color: #eb6c36;
+  color: #b5522f;
+}
+.map-toolbar .map-delete:hover:not(:disabled),
+.map-toolbar .map-delete:focus-visible {
+  border-color: #a33;
+  color: #a33;
+}
+.map-toolbar button:disabled { opacity: .45; }
+
 .map-canvas {
+  position: relative;
   width: 100%;
   height: min(58vh, 560px);
   min-height: 390px;
   overflow: hidden;
-  border-block: 1px solid #dce2df;
-  background: #eef3f2;
+  border-bottom: 1px solid #d8d0c5;
+  background: #f7f4ee;
 }
-.map-canvas .react-flow { background: #eef3f2; }
+.map-canvas .react-flow { background: #f7f4ee; }
 .map-canvas .react-flow__pane { cursor: grab; }
 .map-canvas .react-flow__pane:active { cursor: grabbing; }
-.map-canvas .react-flow__edge-path { stroke: #77a48f; }
-.map-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: #347b61; stroke-width: 2.4px; }
-.map-canvas .react-flow__connection-path { stroke: #347b61; stroke-width: 2px; }
+.map-canvas .react-flow__edge-path {
+  stroke: #969087;
+  stroke-width: 1.25px;
+  stroke-linecap: round;
+}
+.map-canvas .react-flow__edge.selected .react-flow__edge-path {
+  stroke: #eb6c36;
+  stroke-width: 1.8px;
+}
+.map-canvas .react-flow__connection-path {
+  stroke: #eb6c36;
+  stroke-width: 1.6px;
+}
 .map-canvas .react-flow__handle {
-  width: 9px;
-  height: 9px;
-  border: 2px solid #f8fbfa;
-  background: #4d8a70;
+  width: 8px;
+  height: 8px;
+  border: 1px solid #f7f4ee;
+  background: #eb6c36;
 }
 .map-canvas .react-flow__node { cursor: grab; }
 .map-canvas .react-flow__node.dragging { cursor: grabbing; }
 .map-canvas .flow-node {
-  width: 210px;
-  min-height: 84px;
-  border: 1px solid #dacb81;
-  border-left: 5px solid #d4b945;
-  border-radius: 8px;
-  padding: 10px 12px;
-  background: #fff7c7;
-  color: #37352f;
+  --node-accent: #eb6c36;
+  width: 224px;
+  min-height: 96px;
+  border: 1px solid #cfc7bb;
+  border-left: 3px solid var(--node-accent);
+  border-radius: 4px;
+  padding: 12px 14px 11px;
+  background: #fffdf8;
+  color: #1f1c18;
   text-align: left;
-  box-shadow: 0 4px 14px #31483e1c;
+  box-shadow: none;
 }
-.map-canvas .flow-node.selected { outline: 2px solid #347b61; outline-offset: 2px; }
-.map-canvas .flow-node.flow-focus { outline: 3px solid #2f725b88; outline-offset: 3px; box-shadow: 0 7px 18px #285f4930; }
+.map-canvas .flow-node.selected {
+  outline: 1px solid #eb6c36;
+  outline-offset: 3px;
+}
+.map-canvas .flow-node.flow-focus {
+  outline: 2px solid #eb6c36;
+  outline-offset: 3px;
+  box-shadow: none;
+}
 .map-canvas .flow-node .react-flow__node-default,
 .map-canvas .flow-node .react-flow__node-input { border: 0; }
-.map-canvas .flow-node .platform { display: block; margin-bottom: 5px; font-size: 8px; text-transform: uppercase; }
+.map-canvas .flow-node .platform {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--node-accent);
+  font: 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
 .map-canvas .flow-node strong {
   display: -webkit-box;
   max-width: 100%;
@@ -76,35 +141,227 @@
   white-space: normal;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
-  font: 600 10px/1.45 system-ui, sans-serif;
+  font: 600 11px/1.45 system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 .map-canvas .flow-node small {
   display: -webkit-box;
   max-width: 100%;
-  margin-top: 5px;
+  margin-top: 7px;
   overflow: hidden;
   overflow-wrap: anywhere;
   word-break: break-all;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: #777269;
-  font: 9px/1.35 system-ui, sans-serif;
+  font: 9px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .map-canvas .flow-root {
+  --node-accent: #eb6c36;
   width: 176px;
-  min-height: 68px;
-  border-color: #d48e50;
-  border-left-color: #c97d3b;
-  background: #f6b777;
-  color: #58351d;
+  min-height: 72px;
+  border-color: #eb6c36;
+  border-left-width: 5px;
+  background: #eb6c36;
+  color: #fffaf2;
 }
-.map-canvas .flow-root strong { font: 700 13px/1.35 Georgia, "Songti SC", serif; }
-.map-canvas .flow-root small { color: #6b4328; }
-.map-canvas .color-green { border-color: #8cc5a0; border-left-color: #4f9b6f; background: #e3f5e9; }
-.map-canvas .color-blue { border-color: #9bb9df; border-left-color: #5888ca; background: #e3efff; }
-.map-canvas .color-pink { border-color: #dea4bb; border-left-color: #c86d91; background: #fde8f0; }
-.map-canvas .react-flow__controls { overflow: hidden; border: 1px solid #d5ddd9; border-radius: 8px; box-shadow: 0 3px 12px #33463e1c; }
-.map-canvas .react-flow__controls-button { width: 25px; height: 25px; border: 0; border-radius: 0; color: #4d5752; }
-.map-canvas .react-flow__minimap { width: 92px; height: 64px; border: 1px solid #cfd8d4; border-radius: 7px; background: #f8faf9; box-shadow: 0 3px 12px #33463e12; }
-.map-canvas .react-flow__attribution { padding: 2px 4px; background: #f8faf9cc; color: #7f8b85; font-size: 7px; }
-.map-help { margin: 8px 16px 0; color: #858077; font-size: 10px; line-height: 1.5; }
+.map-canvas .flow-root strong { font: 700 16px/1.3 Georgia, "Songti SC", serif; }
+.map-canvas .flow-root small { color: #fff0df; }
+.map-canvas .color-yellow { --node-accent: #c36a3d; background: #fffaf3; }
+.map-canvas .color-green { --node-accent: #5c7c68; background: #f4f6f0; }
+.map-canvas .color-blue { --node-accent: #667b9d; background: #f2f4f6; }
+.map-canvas .color-pink { --node-accent: #b87378; background: #fbf3f0; }
+
+.map-canvas .react-flow__controls {
+  overflow: hidden;
+  border: 1px solid #cfc7bb;
+  border-radius: 3px;
+  box-shadow: none;
+}
+.map-canvas .react-flow__controls-button {
+  width: 25px;
+  height: 25px;
+  border: 0;
+  border-radius: 0;
+  background: #fffdf8;
+  color: #4f4941;
+}
+.map-canvas .react-flow__controls-button:hover { background: #f0ebe2; }
+.map-canvas .react-flow__minimap {
+  width: 92px;
+  height: 64px;
+  border: 1px solid #cfc7bb;
+  border-radius: 3px;
+  background: #fffdf8;
+  box-shadow: none;
+}
+.map-canvas .react-flow__attribution {
+  padding: 2px 4px;
+  background: #f7f4eedd;
+  color: #8b8479;
+  font-size: 7px;
+}
+.map-help {
+  margin: 0 16px;
+  padding: 9px 0 0;
+  color: #858077;
+  font: 9px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.map-detail {
+  position: absolute;
+  z-index: 12;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(320px, calc(100% - 24px));
+  overflow: hidden;
+  border: 1px solid #1f1c18;
+  border-radius: 4px;
+  background: #fffdf8;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(24px) scale(.985);
+  transform-origin: right center;
+  transition: opacity 180ms ease-out, transform 220ms cubic-bezier(.22, 1, .36, 1);
+}
+.map-detail.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0) scale(1);
+}
+.map-detail-content {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  padding: 14px;
+}
+.map-detail-content > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #d8d0c5;
+}
+.map-detail-content > header > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.map-detail-content > header .platform {
+  font: 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.map-detail-content > header strong { font: 700 16px/1.2 Georgia, "Songti SC", serif; }
+.map-detail-close {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid #bdb5a9;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+}
+.map-detail-close:hover,
+.map-detail-close:focus-visible { border-color: #1f1c18; outline: 2px solid #1f1c18; outline-offset: 2px; }
+.map-detail-meta {
+  display: flex;
+  gap: 8px;
+  padding: 9px 0;
+  color: #777269;
+  font: 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.map-detail-original {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  border-block: 1px solid #d8d0c5;
+  padding: 10px 0;
+}
+.map-detail-original > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.map-detail-original > div strong { font-size: 10px; }
+.map-detail-original > div span {
+  color: #858077;
+  font: 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-transform: uppercase;
+}
+.map-detail-original blockquote {
+  margin: 10px 0 2px;
+  padding-left: 10px;
+  border-left: 2px solid #eb6c36;
+  color: #2f2b26;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font: 13px/1.65 Georgia, "Songti SC", serif;
+}
+.map-detail-annotation {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 11px;
+  color: #4f4941;
+  font-size: 9px;
+  font-weight: 700;
+}
+.map-detail-annotation textarea {
+  min-height: 72px;
+  max-height: 132px;
+  resize: vertical;
+  border: 1px solid #cfc7bb;
+  border-radius: 3px;
+  background: #f7f4ee;
+  padding: 8px;
+  color: #2f2b26;
+  font: 11px/1.45 system-ui, sans-serif;
+}
+.map-detail-annotation textarea:focus-visible { border-color: #1f1c18; outline: 2px solid #1f1c18; outline-offset: 1px; }
+.map-detail-content > footer {
+  display: flex;
+  gap: 7px;
+  padding-top: 10px;
+}
+.map-detail-content > footer button { flex: 1; border-radius: 999px; font-size: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .map-detail { transition: none; }
+}
+
+.notice { max-width: calc(100% - 32px); }
+.undo-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+}
+.undo-notice span {
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.undo-notice button {
+  flex: 0 0 auto;
+  border-color: #fff;
+  background: #fff;
+  color: #111;
+  padding: 4px 9px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.undo-notice button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}

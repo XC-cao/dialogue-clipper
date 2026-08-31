@@ -33,7 +33,7 @@ function date(value: string): string { return value.slice(0, 10); }
 function dateTime(value: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.valueOf())) return value;
-  const parts = new Intl.DateTimeFormat('zh-CN', {
+  const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hour12: false
   }).formatToParts(parsed);
@@ -44,19 +44,19 @@ function dateTime(value: string): string {
 export function renderMarkdown(notebook: Notebook, clips: Clip[]): string {
   const sections = clips.map((clip, index) => {
     const annotation = clip.annotation.trim()
-      ? `\n\n**我的批注**\n\n${clip.annotation.trim()}`
+      ? `\n\n**My annotation**\n\n${clip.annotation.trim()}`
       : '';
-    return `## 摘录 ${index + 1}\n\n${quote(clip.originalText)}${annotation}\n\n` +
-      `来源：[${linkText(clip.conversationTitle || '未命名对话')}](${linkUrl(clip.conversationUrl)})  \n` +
-      `平台：${displayPlatform(clip.platform)}  \n` +
-      `角色：${displayRole(clip.messageRole)}  \n` +
-      `摘录时间：${dateTime(clip.capturedAt)}`;
+    return `## Clip ${index + 1}\n\n${quote(clip.originalText)}${annotation}\n\n` +
+      `Source: [${linkText(clip.conversationTitle || 'Untitled conversation')}](${linkUrl(clip.conversationUrl)})  \n` +
+      `Platform: ${displayPlatform(clip.platform)}  \n` +
+      `Role: ${displayRole(clip.messageRole)}  \n` +
+      `Clipped at: ${dateTime(clip.capturedAt)}`;
   });
   const description = notebook.description.trim() ? `\n${notebook.description.trim()}\n` : '';
   return `---\ntitle: ${yaml(notebook.title)}\ncreated: ${date(notebook.createdAt)}\nupdated: ${date(notebook.updatedAt)}\n---\n\n# ${notebook.title}${description}\n\n${sections.join('\n\n')}\n`;
 }
 
 export function markdownFilename(notebook: Notebook): string {
-  const safe = notebook.title.trim().replace(/[\\/:*?"<>|：／？＊＂＜＞｜]/g, '-').replace(/\s+/g, ' ').slice(0, 80) || '未命名笔记';
+  const safe = notebook.title.trim().replace(/[\\/:*?"<>|：／？＊＂＜＞｜]/g, '-').replace(/\s+/g, ' ').slice(0, 80) || 'Untitled notebook';
   return `${safe}-${date(notebook.updatedAt)}.md`;
 }

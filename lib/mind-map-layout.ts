@@ -8,12 +8,12 @@ export interface MindMapLayout {
   edges: Array<{ id: string; source: string; target: string }>;
 }
 
-const ROOT_SIZE = { width: 176, height: 68 };
-const CLIP_SIZE = { width: 210, height: 84 };
+const ROOT_SIZE = { width: 176, height: 72 };
+const CLIP_SIZE = { width: 224, height: 96 };
 
 export function layoutMindMap(notebook: Notebook, clips: Clip[]): MindMapLayout {
   const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({ rankdir: 'LR', ranksep: 82, nodesep: 34, marginx: 28, marginy: 28 });
+  graph.setGraph({ rankdir: 'LR', ranksep: 76, nodesep: 32, marginx: 32, marginy: 32 });
   graph.setNode(MIND_MAP_ROOT_ID, { ...ROOT_SIZE });
 
   const clipIds = new Set(clips.map(clip => clip.id));

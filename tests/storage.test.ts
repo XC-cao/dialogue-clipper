@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadState, normalizeState, saveState, setClipParent, updateMindMapPositions } from '../lib/storage';
+import { deleteClip, loadState, normalizeState, restoreDeletedClip, saveState, setClipParent, updateMindMapPositions } from '../lib/storage';
 import type { Clip, StoredState } from '../lib/models';
 
 let bucket: Record<string, unknown>;
@@ -32,7 +32,7 @@ describe('storage migration', () => {
     expect(state.schemaVersion).toBe(1);
     expect(state.currentNotebookId).toBe('n');
     expect(state.pendingCaptures).toEqual([]);
-    expect(state.notebooks.n).toMatchObject({ title: '未命名笔记', description: '', clipIds: [], schemaVersion: 1 });
+    expect(state.notebooks.n).toMatchObject({ title: 'Untitled notebook', description: '', clipIds: [], schemaVersion: 1 });
     expect(typeof state.notebooks.n!.updatedAt).toBe('string');
   });
 
@@ -79,5 +79,36 @@ describe('storage migration', () => {
     expect((await loadState()).notebooks.n!.mindMapPositions).toEqual({
       a: { x: 120, y: 88 }, b: { x: 360, y: 144 }
     });
+  });
+
+  it('删除导图节点时回挂子节点并清理保存的位置', async () => {
+    const state: StoredState = {
+      schemaVersion: 1, currentNotebookId: 'n', pendingCaptures: [],
+      notebooks: {
+        n: {
+          id: 'n', title: '主题', description: '', clipIds: ['a', 'b'],
+          mindMapPositions: { a: { x: 120, y: 88 }, b: { x: 360, y: 144 } },
+          createdAt: '2026-08-14', updatedAt: '2026-08-14', schemaVersion: 1
+        }
+      },
+      clips: { a: makeClip('a'), b: makeClip('b', 'a') }
+    };
+    await saveState(state);
+    const snapshot = await deleteClip('a');
+    const saved = await loadState();
+    expect(saved.clips.a).toBeUndefined();
+    expect(saved.clips.b?.parentClipId).toBeUndefined();
+    expect(saved.notebooks.n?.clipIds).toEqual(['b']);
+    expect(saved.notebooks.n?.mindMapPositions).toEqual({ b: { x: 360, y: 144 } });
+
+    expect(snapshot).toBeDefined();
+    expect(await restoreDeletedClip(snapshot!)).toBe(true);
+    const restored = await loadState();
+    expect(restored.notebooks.n?.clipIds).toEqual(['a', 'b']);
+    expect(restored.clips.b?.parentClipId).toBe('a');
+    expect(restored.notebooks.n?.mindMapPositions).toEqual({
+      a: { x: 120, y: 88 }, b: { x: 360, y: 144 }
+    });
+    expect(await restoreDeletedClip(snapshot!)).toBe(false);
   });
 });
