@@ -28,6 +28,14 @@ describe('site adapters', () => {
     expect(claudeAdapter.contentRoots()[0]!.id).toBe('a1');
   });
 
+  it('解析 Claude 新版 response 内容容器', () => {
+    document.body.innerHTML = '<div class="font-claude-response" id="a2"><div data-testid="message-content"><p>新版回答</p></div></div>';
+    const root = claudeAdapter.messageRoot(document.querySelector('p')!.firstChild!)!;
+    expect(root.id).toBe('a2');
+    expect(claudeAdapter.messageRole(root)).toBe('assistant');
+    expect(claudeAdapter.messageId(root)).toBe('a2');
+  });
+
   it('解析 Gemini 模型消息', () => {
     document.body.innerHTML = '<model-response id="r1"><p>answer</p></model-response>';
     const root = geminiAdapter.messageRoot(document.querySelector('p')!.firstChild!)!;
