@@ -44,7 +44,7 @@
 - Privacy Practices：单一用途、权限理由、无远程代码、`个人通讯` / `网络记录` / `网站内容`、3 项 Limited Use 与隐私政策 URL 已保存。
 - Distribution：免费、公开、所有地区。
 - 当前账号阻塞：无；最终审核提交仍须等待三站 smoke gate 完成。
-- 注意：Claude DOM 兼容性修复后生成了新的正式 ZIP，须在 Dashboard 的“文件包”页替换当前草稿包。
+- Claude DOM 兼容性修复后的正式 ZIP 已替换到草稿并通过解析；Dashboard 已启用“提请审核”，但尚未点击。
 
 ## 上传文件
 

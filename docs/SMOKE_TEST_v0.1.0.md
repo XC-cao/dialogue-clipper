@@ -13,6 +13,7 @@
 - [x] WXT Chrome MV3 production build
 - [x] Manifest / permission inspection
 - [x] Final ZIP static scan
+- [x] Final ZIP accepted by Chrome Web Store draft package parser
 
 Package: `.output/dialogue-clipper-0.1.0-chrome.zip`
 
@@ -34,6 +35,6 @@ The archive contains 14 entries and 540,056 uncompressed bytes. The manifest is 
 2. On Claude and Gemini: open a non-sensitive conversation, select one assistant sentence, click `Clip` (or press `Ctrl+Shift+S` on macOS), add an annotation, refresh, confirm `SOURCE FOUND`, open Navigate, and return to the source message.
 3. On ChatGPT, confirm the conversation map once in a clean test conversation.
 4. Confirm Markdown copy and download once with the final notebook.
-5. Confirm the extension service worker console has no current errors after clearing old errors.
+5. Stale extension-context errors were cleared after reloading the final build; confirm no new errors appear after the remaining Claude/Gemini interactions.
 
 Do not mark the three-site gate complete or submit for review until the remaining checks pass.
