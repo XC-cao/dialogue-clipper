@@ -10,9 +10,9 @@ import { layoutMindMap, MIND_MAP_ROOT_ID } from '../../lib/mind-map-layout';
 import type { Clip, HighlightColor, Notebook, StoredState } from '../../lib/models';
 import { EMPTY_STATE } from '../../lib/models';
 import {
-  assignPending, createNotebook, deleteClip, deleteNotebook, loadState, reorderClips,
-  restoreDeletedClip, selectNotebook, setClipParent, updateClip, updateMindMapPositions, updateNotebook,
-  type DeletedClipSnapshot
+  assignPending, createNotebook, deleteClip, deleteNotebook, loadState, moveClipToNotebook, reorderClips,
+  restoreDeletedClip, restoreMovedClip, selectNotebook, setClipParent, updateClip, updateMindMapPositions, updateNotebook,
+  type DeletedClipSnapshot, type MovedClipSnapshot
 } from '../../lib/storage';
 import type { ExtensionMessage } from '../../lib/messages';
 import {
@@ -34,11 +34,13 @@ export function App() {
   const [cardFocusClipId, setCardFocusClipId] = useState<string>();
   const [notice, setNotice] = useState('');
   const [undoDelete, setUndoDelete] = useState<{ snapshot: DeletedClipSnapshot; label: string }>();
+  const [undoMove, setUndoMove] = useState<{ snapshot: MovedClipSnapshot; targetTitle: string }>();
   const undoTimerRef = useRef<number | undefined>(undefined);
   const [bytes, setBytes] = useState(0);
   const [creating, setCreating] = useState(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const notebook = state.currentNotebookId ? state.notebooks[state.currentNotebookId] : undefined;
+  const notebooks = useMemo(() => Object.values(state.notebooks).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [state.notebooks]);
   const clips = useMemo(() => notebook?.clipIds.map(id => state.clips[id]).filter((clip): clip is Clip => Boolean(clip)) ?? [], [notebook, state.clips]);
   const markdown = notebook ? renderMarkdown(notebook, clips) : '';
 
@@ -101,9 +103,20 @@ export function App() {
 
   const offerUndo = (snapshot: DeletedClipSnapshot, label: string) => {
     if (undoTimerRef.current !== undefined) window.clearTimeout(undoTimerRef.current);
+    setUndoMove(undefined);
     setUndoDelete({ snapshot, label });
     undoTimerRef.current = window.setTimeout(() => {
       setUndoDelete(undefined);
+      undoTimerRef.current = undefined;
+    }, 7000);
+  };
+
+  const offerMoveUndo = (snapshot: MovedClipSnapshot, targetTitle: string) => {
+    if (undoTimerRef.current !== undefined) window.clearTimeout(undoTimerRef.current);
+    setUndoDelete(undefined);
+    setUndoMove({ snapshot, targetTitle });
+    undoTimerRef.current = window.setTimeout(() => {
+      setUndoMove(undefined);
       undoTimerRef.current = undefined;
     }, 7000);
   };
@@ -120,6 +133,20 @@ export function App() {
     }
     await refreshPageHighlights();
     notify('Clip restored');
+  };
+
+  const undoLastMove = async () => {
+    if (!undoMove) return;
+    if (undoTimerRef.current !== undefined) window.clearTimeout(undoTimerRef.current);
+    const restored = await restoreMovedClip(undoMove.snapshot);
+    setUndoMove(undefined);
+    undoTimerRef.current = undefined;
+    if (!restored) {
+      notify('Unable to undo this move.');
+      return;
+    }
+    await refresh();
+    notify('Move undone');
   };
 
   const chooseNotebook = async (id: string) => {
@@ -146,6 +173,18 @@ export function App() {
     offerUndo(snapshot, clipLabel(clip));
     await refreshPageHighlights();
     return true;
+  };
+
+  const moveClip = async (clip: Clip, targetNotebookId: string) => {
+    const target = state.notebooks[targetNotebookId];
+    if (!target) return;
+    const snapshot = await moveClipToNotebook(clip.id, target.id);
+    if (!snapshot) {
+      notify('Unable to move this clip.');
+      return;
+    }
+    await refresh();
+    offerMoveUndo(snapshot, target.title);
   };
 
   const dropOn = async (targetId: string) => {
@@ -225,7 +264,7 @@ export function App() {
       <label className="field-label" htmlFor="notebook-select">Current notebook</label>
       <div className="notebook-row">
         <select id="notebook-select" value={notebook?.id ?? ''} onChange={event => void chooseNotebook(event.target.value)}>
-          {Object.values(state.notebooks).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
+          {notebooks.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
         </select>
         <button className="danger-ghost" title="Delete notebook" onClick={() => void removeNotebook()}>Delete</button>
       </div>
@@ -240,7 +279,7 @@ export function App() {
 
     {view === 'clips' && notebook && <section className="clip-list">
         {clips.length === 0 && <EmptyState />}
-        {clips.map(clip => <ClipCard key={clip.id} clip={clip} clips={clips} draggable onDragStart={() => setDraggedId(clip.id)} onDragOver={event => event.preventDefault()} onDrop={() => void dropOn(clip.id)} onDelete={() => void removeClip(clip)} onChanged={() => void refreshPageHighlights()} />)}
+        {clips.map(clip => <ClipCard key={clip.id} clip={clip} clips={clips} notebooks={notebooks} draggable onDragStart={() => setDraggedId(clip.id)} onDragOver={event => event.preventDefault()} onDrop={() => void dropOn(clip.id)} onMove={targetNotebookId => void moveClip(clip, targetNotebookId)} onDelete={() => void removeClip(clip)} onChanged={() => void refreshPageHighlights()} />)}
     </section>}
     {view === 'navigation' && <section className="navigation-workspace">
       <div className="navigation-switch" role="group" aria-label="Navigation type">
@@ -259,7 +298,8 @@ export function App() {
         <div className="export-actions"><button onClick={() => void copy()} disabled={!clips.length}>Copy Markdown</button><button className="primary" onClick={() => void download()} disabled={!clips.length}>Download .md</button></div>
     </footer>}
     {undoDelete && <div className="notice undo-notice" role="region" aria-label="Deletion status" aria-live="polite"><span>Deleted “{undoDelete.label}”</span><button autoFocus onClick={() => void undoLastDelete()}>Undo</button></div>}
-    {!undoDelete && notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
+    {undoMove && <div className="notice undo-notice" role="region" aria-label="Move status" aria-live="polite"><span>Moved to “{undoMove.targetTitle}”</span><button onClick={() => void undoLastMove()}>Undo</button></div>}
+    {!undoDelete && !undoMove && notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
   </main>;
 }
 
@@ -283,7 +323,7 @@ function NotebookEditor({ notebook }: { notebook: Notebook }) {
   </section>;
 }
 
-function ClipCard({ clip, clips, onDelete, onChanged, ...dragProps }: { clip: Clip; clips: Clip[]; onDelete: () => void; onChanged: () => void } & React.HTMLAttributes<HTMLElement>) {
+function ClipCard({ clip, clips, notebooks, onMove, onDelete, onChanged, ...dragProps }: { clip: Clip; clips: Clip[]; notebooks: Notebook[]; onMove: (notebookId: string) => void; onDelete: () => void; onChanged: () => void } & React.HTMLAttributes<HTMLElement>) {
   const [annotation, setAnnotation] = useState(clip.annotation);
   const cardRef = useRef<HTMLElement>(null);
   useEffect(() => setAnnotation(clip.annotation), [clip.annotation]);
@@ -299,8 +339,56 @@ function ClipCard({ clip, clips, onDelete, onChanged, ...dragProps }: { clip: Cl
     <blockquote>{clip.originalText}</blockquote>
     <textarea value={annotation} maxLength={2000} placeholder="Add your annotation…" onChange={event => setAnnotation(event.target.value)} onBlur={() => void updateClip(clip.id, { annotation })} />
     <label className="parent-picker"><span>Connect to</span><select value={clip.parentClipId ?? ''} onChange={event => void setClipParent(clip.id, event.target.value || undefined)}><option value="">Notebook topic (root)</option>{validParentOptions(clip, clips).map(item => <option key={item.id} value={item.id}>{clipLabel(item)}</option>)}</select></label>
-    <div className="card-actions"><div className="colors">{COLORS.map(color => <button key={color} aria-label={`${color} highlight`} className={clip.highlightColor === color ? 'selected' : ''} data-color={color} onClick={() => { void updateClip(clip.id, { highlightColor: color }).then(onChanged); }} />)}</div><button onClick={() => void openSource()}>Source ↗</button><button className="danger-ghost" onClick={onDelete}>Remove</button></div>
+    <div className="card-actions"><div className="colors">{COLORS.map(color => <button key={color} aria-label={`${color} highlight`} className={clip.highlightColor === color ? 'selected' : ''} data-color={color} onClick={() => { void updateClip(clip.id, { highlightColor: color }).then(onChanged); }} />)}</div>{notebooks.length > 1 && <MoveClipMenu clip={clip} clips={clips} notebooks={notebooks} onMove={onMove} />}<button onClick={() => void openSource()}>Source ↗</button><button className="danger-ghost" onClick={onDelete}>Remove</button></div>
   </article>;
+}
+
+function MoveClipMenu({ clip, clips, notebooks, onMove }: { clip: Clip; clips: Clip[]; notebooks: Notebook[]; onMove: (notebookId: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const targets = notebooks.filter(item => item.id !== clip.notebookId);
+  const filteredTargets = targets.filter(item => item.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const hasConnections = Boolean(clip.parentClipId) || clips.some(item => item.parentClipId === clip.id);
+  const menuId = `move-menu-${clip.id}`;
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  const chooseTarget = (notebookId: string) => {
+    setOpen(false);
+    setQuery('');
+    onMove(notebookId);
+  };
+
+  return <div className="move-menu" ref={rootRef}>
+    <button ref={buttonRef} type="button" className="move-trigger" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={() => { setQuery(''); setOpen(value => !value); }}>Move…</button>
+    {open && <div className="move-popover" id={menuId} role="menu" aria-label="Move clip to another notebook">
+      <div className="move-popover-header"><strong>Move clip to</strong><span>{targets.length} {targets.length === 1 ? 'notebook' : 'notebooks'}</span></div>
+      {targets.length > 6 && <input autoFocus type="search" value={query} placeholder="Find a notebook…" aria-label="Find a notebook" onChange={event => setQuery(event.target.value)} />}
+      <div className="move-targets">
+        {filteredTargets.map((item, index) => <button autoFocus={targets.length <= 6 && index === 0} type="button" role="menuitem" key={item.id} onClick={() => chooseTarget(item.id)}><span>{item.title}</span><small>{item.clipIds.length}</small></button>)}
+        {!filteredTargets.length && <p>No matching notebooks</p>}
+      </div>
+      {hasConnections && <p className="move-warning">Moving will reset its mind-map connections.</p>}
+    </div>}
+  </div>;
 }
 
 type MapNodeData = { label: React.ReactNode; color: string; clip?: Clip };

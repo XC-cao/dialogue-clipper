@@ -2,6 +2,7 @@ import { createAnchor, locateTextSegments } from '../lib/anchors';
 import { currentAdapter } from '../lib/adapters';
 import { resolveFloatingPosition, type RectLike } from '../lib/floating-position';
 import { chooseHighlightSurface, type HighlightSurface } from '../lib/highlight-theme';
+import { isMissingHighlightConfirmed, recordMissingHighlight, type MissingHighlightAttempt } from '../lib/highlight-status';
 import {
   attachClipsToConversationNodes, buildConversationSnapshot, conversationNodeId, conversationTextFingerprint, generateConversationNodeTitle, parseBranchInfo,
   type ConversationGraphNode, type ConversationGraphSnapshot, type ConversationNodeLocator
@@ -18,6 +19,8 @@ const GRAPH_LEASE_MS = 120_000;
 const MAX_GRAPH_NODES = 600;
 const MAX_GRAPH_NODE_TEXT = 20_000;
 const MAX_GRAPH_TOTAL_TEXT = 2_000_000;
+const MISSING_STATUS_CONFIRMATIONS = 3;
+const MISSING_STATUS_GRACE_MS = 1_200;
 
 export default defineContentScript({
   matches: ['https://chatgpt.com/*', 'https://claude.ai/*', 'https://gemini.google.com/*'],
@@ -31,6 +34,8 @@ export default defineContentScript({
     const button = createCaptureButton();
     let lastRange: Range | null = null;
     let refreshTimer: number | undefined;
+    let refreshPromise: Promise<void> | undefined;
+    let refreshQueued = false;
     let conversationRefreshTimer: number | undefined;
     let activeNodeTimer: number | undefined;
     let graphLeaseUntil = 0;
@@ -40,7 +45,9 @@ export default defineContentScript({
     let lastActiveNodeId: string | undefined;
     let conversationNodeUrl = '';
     let conversationNodeElements = new Map<string, HTMLElement>();
+    const missingStatusAttempts = new Map<string, MissingHighlightAttempt>();
     const positionTimers = new Set<number>();
+    let captureInFlight = false;
 
     const showButton = () => {
       const selection = window.getSelection();
@@ -88,34 +95,61 @@ export default defineContentScript({
     };
 
     const capture = async () => {
-      const selection = window.getSelection();
-      const range = selection && !selection.isCollapsed && selection.rangeCount ? selection.getRangeAt(0).cloneRange() : lastRange;
-      if (!range) return toast('Select text in a message or report first', 'error');
-      const message = activeAdapter.messageRoot(range.startContainer);
-      if (!message || message !== activeAdapter.messageRoot(range.endContainer)) return toast('Clipping across multiple messages or reports is not supported', 'error');
-      const originalText = range.toString();
-      if (!originalText.trim()) return toast('The selection is empty', 'error');
-      const role = activeAdapter.messageRole(message);
-      const metadata = activeAdapter.metadata();
-      const anchor = createAnchor(range, message, role, activeAdapter.messageId(message));
-      let response: ExtensionMessage;
+      if (captureInFlight) return;
+      captureInFlight = true;
+      button.disabled = true;
       try {
-        response = await chrome.runtime.sendMessage({
-          version: 1,
-          type: 'CAPTURE_SELECTION',
-          payload: { originalText, ...metadata, messageRole: role, anchor }
-        } satisfies ExtensionMessage) as ExtensionMessage;
-      } catch {
-        return toast('Unable to save the clip. Reload the page and try again.', 'error');
-      }
-      hideButton();
-      selection?.removeAllRanges();
-      if (response.type !== 'CAPTURE_RESULT' || !response.ok) return toast('Unable to save the clip. Try again.', 'error');
-      if (response.clip) {
-        highlightClip(response.clip);
-        toast('Added to the current notebook');
-      } else {
-        toast('Select a notebook to save this clip');
+        const selection = window.getSelection();
+        let range: Range | undefined;
+        let message: HTMLElement | null = null;
+        const liveRange = selection && !selection.isCollapsed && selection.rangeCount ? selection.getRangeAt(0) : undefined;
+        if (liveRange?.startContainer.isConnected && liveRange.endContainer.isConnected) {
+          const startMessage = activeAdapter.messageRoot(liveRange.startContainer);
+          const endMessage = activeAdapter.messageRoot(liveRange.endContainer);
+          if (startMessage || endMessage) {
+            if (!startMessage || startMessage !== endMessage) {
+              return toast('Clipping across multiple messages or reports is not supported', 'error');
+            }
+            range = liveRange.cloneRange();
+            message = startMessage;
+          }
+        }
+        if (!range && lastRange?.startContainer.isConnected && lastRange.endContainer.isConnected) {
+          const lastMessage = activeAdapter.messageRoot(lastRange.startContainer);
+          if (lastMessage && lastMessage === activeAdapter.messageRoot(lastRange.endContainer)) {
+            range = lastRange.cloneRange();
+            message = lastMessage;
+          }
+        }
+        if (!range || !message) return toast('Select text in a message or report first', 'error');
+        const originalText = range.toString();
+        if (!originalText.trim()) return toast('The selection is empty', 'error');
+
+        let response: ExtensionMessage | undefined;
+        try {
+          const role = activeAdapter.messageRole(message);
+          const metadata = activeAdapter.metadata();
+          const anchor = createAnchor(range, message, role, activeAdapter.messageId(message));
+          response = await chrome.runtime.sendMessage({
+            version: 1,
+            type: 'CAPTURE_SELECTION',
+            payload: { originalText, ...metadata, messageRole: role, anchor }
+          } satisfies ExtensionMessage) as ExtensionMessage | undefined;
+        } catch {
+          return toast('Unable to save the clip. Reload the page and try again.', 'error');
+        }
+        hideButton();
+        selection?.removeAllRanges();
+        if (response?.type !== 'CAPTURE_RESULT' || !response.ok) return toast('Unable to save the clip. Try again.', 'error');
+        if (response.clip) {
+          if (!highlightClip(response.clip)) scheduleRefresh(0);
+          toast('Added to the current notebook');
+        } else {
+          toast('Select a notebook to save this clip');
+        }
+      } finally {
+        captureInFlight = false;
+        button.disabled = false;
       }
     };
 
@@ -238,19 +272,65 @@ export default defineContentScript({
     };
 
     const refreshHighlights = async () => {
-      observer.disconnect();
-      try {
-        document.querySelectorAll<HTMLElement>(`[${HIGHLIGHT_ATTR}]`).forEach(unwrapHighlight);
-        if (!activeAdapter.isConversation()) return;
+      if (refreshPromise) {
+        refreshQueued = true;
+        return refreshPromise;
+      }
+      const run = (async () => {
+        // Keep existing marks in place while storage is being read. The old
+        // implementation removed every mark before this await, which made
+        // the source text visibly blink on every page mutation.
         const state = await loadState();
-        const metadata = activeAdapter.metadata();
-        const pageClips = Object.values(state.clips).filter(clip => clipMatchesConversation(clip, metadata));
-        const statuses = new Map(pageClips.map(clip => [clip.id, highlightClip(clip) ? 'resolved' : 'unresolved'] as const));
-        if (pageClips.some(clip => clip.anchor.status !== statuses.get(clip.id))) {
-          await chrome.runtime.sendMessage({ version: 1, type: 'UPDATE_ANCHOR_STATUSES', statuses: Object.fromEntries(statuses) } satisfies ExtensionMessage);
+        const activeConversation = activeAdapter.isConversation();
+        const metadata = activeConversation ? activeAdapter.metadata() : undefined;
+        const pageClips = metadata
+          ? Object.values(state.clips).filter(clip => clipMatchesConversation(clip, metadata))
+          : [];
+        const pageClipIds = new Set(pageClips.map(clip => clip.id));
+        const statusUpdates: Record<string, 'resolved' | 'unresolved'> = {};
+        const now = Date.now();
+
+        observer.disconnect();
+        try {
+          // Only remove marks which no longer belong on this conversation.
+          // Existing marks are reconciled in place by highlightClip().
+          document.querySelectorAll<HTMLElement>(`[${HIGHLIGHT_ATTR}]`).forEach(mark => {
+            if (!pageClipIds.has(mark.getAttribute(HIGHLIGHT_ATTR) ?? '')) unwrapHighlight(mark);
+          });
+
+          for (const clip of pageClips) {
+            const resolved = highlightClip(clip);
+            if (resolved) {
+              missingStatusAttempts.delete(clip.id);
+              if (clip.anchor.status !== 'resolved') statusUpdates[clip.id] = 'resolved';
+              continue;
+            }
+
+            const attempt = recordMissingHighlight(missingStatusAttempts.get(clip.id), now);
+            missingStatusAttempts.set(clip.id, attempt);
+            const confirmedMissing = isMissingHighlightConfirmed(attempt, now, MISSING_STATUS_CONFIRMATIONS, MISSING_STATUS_GRACE_MS);
+            if (confirmedMissing && clip.anchor.status !== 'unresolved') statusUpdates[clip.id] = 'unresolved';
+          }
+          for (const clipId of missingStatusAttempts.keys()) {
+            if (!pageClipIds.has(clipId)) missingStatusAttempts.delete(clipId);
+          }
+        } finally {
+          observer.observe(document.body, { childList: true, subtree: true });
         }
+
+        if (Object.keys(statusUpdates).length) {
+          await chrome.runtime.sendMessage({ version: 1, type: 'UPDATE_ANCHOR_STATUSES', statuses: statusUpdates } satisfies ExtensionMessage).catch(() => undefined);
+        }
+      })();
+      refreshPromise = run;
+      try {
+        await run;
       } finally {
-        observer.observe(document.body, { childList: true, subtree: true });
+        if (refreshPromise === run) refreshPromise = undefined;
+        if (refreshQueued) {
+          refreshQueued = false;
+          scheduleRefresh(120);
+        }
       }
     };
 
@@ -371,23 +451,34 @@ export default defineContentScript({
     };
 
     function highlightClip(clip: Clip): boolean {
-      if (document.querySelector(`[${HIGHLIGHT_ATTR}="${CSS.escape(clip.id)}"]`)) return true;
-      const root = activeAdapter.findMessage(clip.anchor.messageId)
-        ?? findUniqueMessage(clip.anchor.exact, clip.messageRole);
-      if (!root) return false;
-      const segments = locateTextSegments(root, clip.anchor);
-      if (!segments.length) return false;
-      for (const located of [...segments].reverse()) {
-        const mark = document.createElement('mark');
-        mark.setAttribute(HIGHLIGHT_ATTR, clip.id);
-        mark.dataset.color = clip.highlightColor;
-        mark.dataset.surface = detectHighlightSurface(located.node.parentElement ?? root);
-        mark.title = 'Open this clip in the sidebar';
-        const range = document.createRange();
-        range.setStart(located.node, located.start);
-        range.setEnd(located.node, located.end);
-        range.surroundContents(mark);
-        mark.addEventListener('click', () => void chrome.runtime.sendMessage({ version: 1, type: 'FOCUS_CLIP', clipId: clip.id } satisfies ExtensionMessage));
+      const createdMarks: HTMLElement[] = [];
+      try {
+        const existingMarks = Array.from(document.querySelectorAll<HTMLElement>(`[${HIGHLIGHT_ATTR}="${CSS.escape(clip.id)}"]`));
+        if (existingMarks.length) {
+          existingMarks.forEach(mark => updateHighlightMark(mark, clip));
+          return true;
+        }
+        const root = activeAdapter.findMessage(clip.anchor.messageId)
+          ?? findUniqueMessage(clip.anchor.exact, clip.messageRole);
+        if (!root) return false;
+        const segments = locateTextSegments(root, clip.anchor);
+        if (!segments.length) return false;
+        for (const located of [...segments].reverse()) {
+          if (!located.node.isConnected) throw new Error('The source changed while highlighting');
+          const mark = document.createElement('mark');
+          mark.setAttribute(HIGHLIGHT_ATTR, clip.id);
+          updateHighlightMark(mark, clip, located.node.parentElement ?? root);
+          mark.title = 'Open this clip in the sidebar';
+          const range = document.createRange();
+          range.setStart(located.node, located.start);
+          range.setEnd(located.node, located.end);
+          range.surroundContents(mark);
+          mark.addEventListener('click', () => void chrome.runtime.sendMessage({ version: 1, type: 'FOCUS_CLIP', clipId: clip.id } satisfies ExtensionMessage));
+          createdMarks.push(mark);
+        }
+      } catch {
+        createdMarks.forEach(unwrapHighlight);
+        return false;
       }
       return true;
     }
@@ -528,6 +619,12 @@ function unwrapHighlight(mark: HTMLElement): void {
   while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
   mark.remove();
   parent.normalize();
+}
+
+function updateHighlightMark(mark: HTMLElement, clip: Clip, surfaceElement?: HTMLElement): void {
+  mark.dataset.color = clip.highlightColor;
+  const surface = surfaceElement ?? mark.parentElement;
+  if (surface) mark.dataset.surface = detectHighlightSurface(surface);
 }
 
 function toast(message: string, kind: 'success' | 'error' = 'success'): void {

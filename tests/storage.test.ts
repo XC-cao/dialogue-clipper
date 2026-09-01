@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { deleteClip, loadState, normalizeState, restoreDeletedClip, saveState, setClipParent, updateMindMapPositions } from '../lib/storage';
+import { deleteClip, loadState, moveClipToNotebook, normalizeState, restoreDeletedClip, restoreMovedClip, saveState, setClipParent, updateMindMapPositions } from '../lib/storage';
 import type { Clip, StoredState } from '../lib/models';
 
 let bucket: Record<string, unknown>;
@@ -110,5 +110,57 @@ describe('storage migration', () => {
       a: { x: 120, y: 88 }, b: { x: 360, y: 144 }
     });
     expect(await restoreDeletedClip(snapshot!)).toBe(false);
+  });
+
+  it('把单张摘录迁移到其他笔记并清理跨笔记关系与旧位置', async () => {
+    const state: StoredState = {
+      schemaVersion: 1, currentNotebookId: 'source', pendingCaptures: [],
+      notebooks: {
+        source: {
+          id: 'source', title: '来源', description: '', clipIds: ['a', 'b'],
+          mindMapPositions: { a: { x: 120, y: 88 }, b: { x: 360, y: 144 } },
+          createdAt: '2026-08-14', updatedAt: '2026-08-14', schemaVersion: 1
+        },
+        target: {
+          id: 'target', title: '目标', description: '', clipIds: ['c'],
+          mindMapPositions: { c: { x: 80, y: 40 } },
+          createdAt: '2026-08-14', updatedAt: '2026-08-14', schemaVersion: 1
+        }
+      },
+      clips: {
+        a: { ...makeClip('a'), notebookId: 'source' },
+        b: { ...makeClip('b', 'a'), notebookId: 'source' },
+        c: { ...makeClip('c'), notebookId: 'target' }
+      }
+    };
+    await saveState(state);
+
+    const snapshot = await moveClipToNotebook('a', 'target');
+    expect(snapshot).toMatchObject({
+      clipId: 'a', sourceNotebookId: 'source', targetNotebookId: 'target', sourceIndex: 0,
+      childIds: ['b'], position: { x: 120, y: 88 }
+    });
+    expect(await moveClipToNotebook('a', 'target')).toBeUndefined();
+    expect(await moveClipToNotebook('a', 'missing')).toBeUndefined();
+
+    const saved = await loadState();
+    expect(saved.notebooks.source?.clipIds).toEqual(['b']);
+    expect(saved.notebooks.target?.clipIds).toEqual(['c', 'a']);
+    expect(saved.notebooks.source?.mindMapPositions).toEqual({ b: { x: 360, y: 144 } });
+    expect(saved.notebooks.target?.mindMapPositions).toEqual({ c: { x: 80, y: 40 } });
+    expect(saved.clips.a).toMatchObject({ notebookId: 'target' });
+    expect(saved.clips.a?.parentClipId).toBeUndefined();
+    expect(saved.clips.b?.parentClipId).toBeUndefined();
+
+    expect(await restoreMovedClip(snapshot!)).toBe(true);
+    const restored = await loadState();
+    expect(restored.notebooks.source?.clipIds).toEqual(['a', 'b']);
+    expect(restored.notebooks.target?.clipIds).toEqual(['c']);
+    expect(restored.notebooks.source?.mindMapPositions).toEqual({
+      a: { x: 120, y: 88 }, b: { x: 360, y: 144 }
+    });
+    expect(restored.clips.a).toMatchObject({ notebookId: 'source' });
+    expect(restored.clips.b?.parentClipId).toBe('a');
+    expect(await restoreMovedClip(snapshot!)).toBe(false);
   });
 });

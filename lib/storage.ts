@@ -19,6 +19,16 @@ export interface DeletedClipSnapshot {
   position?: { x: number; y: number };
 }
 
+export interface MovedClipSnapshot {
+  clipId: string;
+  sourceNotebookId: string;
+  targetNotebookId: string;
+  sourceIndex: number;
+  parentClipId?: string;
+  childIds: string[];
+  position?: { x: number; y: number };
+}
+
 function id(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
 }
@@ -317,6 +327,81 @@ export async function restoreDeletedClip(snapshot: DeletedClipSnapshot): Promise
       if (child?.notebookId === notebook.id && !child.parentClipId) child.parentClipId = clip.id;
     }
     notebook.updatedAt = new Date().toISOString();
+    restored = true;
+  });
+  return restored;
+}
+
+export async function moveClipToNotebook(clipId: string, targetNotebookId: string): Promise<MovedClipSnapshot | undefined> {
+  let snapshot: MovedClipSnapshot | undefined;
+  await updateState(state => {
+    const clip = state.clips[clipId];
+    const target = state.notebooks[targetNotebookId];
+    const source = clip ? state.notebooks[clip.notebookId] : undefined;
+    if (!clip || !source || !target || source.id === target.id) return;
+
+    snapshot = {
+      clipId: clip.id,
+      sourceNotebookId: source.id,
+      targetNotebookId: target.id,
+      sourceIndex: Math.max(0, source.clipIds.indexOf(clip.id)),
+      parentClipId: clip.parentClipId,
+      childIds: Object.values(state.clips)
+        .filter(child => child.notebookId === source.id && child.parentClipId === clip.id)
+        .map(child => child.id),
+      position: source.mindMapPositions?.[clip.id] ? { ...source.mindMapPositions[clip.id]! } : undefined
+    };
+
+    source.clipIds = source.clipIds.filter(id => id !== clip.id);
+    if (source.mindMapPositions) {
+      delete source.mindMapPositions[clip.id];
+      if (!Object.keys(source.mindMapPositions).length) delete source.mindMapPositions;
+    }
+    if (!target.clipIds.includes(clip.id)) target.clipIds.push(clip.id);
+
+    clip.notebookId = target.id;
+    delete clip.parentClipId;
+    for (const child of Object.values(state.clips)) {
+      if (child.notebookId === source.id && child.parentClipId === clip.id) delete child.parentClipId;
+    }
+
+    const now = new Date().toISOString();
+    source.updatedAt = now;
+    target.updatedAt = now;
+  });
+  return snapshot;
+}
+
+export async function restoreMovedClip(snapshot: MovedClipSnapshot): Promise<boolean> {
+  let restored = false;
+  await updateState(state => {
+    const clip = state.clips[snapshot.clipId];
+    const source = state.notebooks[snapshot.sourceNotebookId];
+    const target = state.notebooks[snapshot.targetNotebookId];
+    if (!clip || !source || !target || clip.notebookId !== target.id) return;
+
+    target.clipIds = target.clipIds.filter(id => id !== clip.id);
+    if (target.mindMapPositions) {
+      delete target.mindMapPositions[clip.id];
+      if (!Object.keys(target.mindMapPositions).length) delete target.mindMapPositions;
+    }
+    const index = Math.min(Math.max(0, snapshot.sourceIndex), source.clipIds.length);
+    source.clipIds.splice(index, 0, clip.id);
+    clip.notebookId = source.id;
+    const parent = snapshot.parentClipId ? state.clips[snapshot.parentClipId] : undefined;
+    if (parent?.notebookId === source.id) clip.parentClipId = parent.id;
+    else delete clip.parentClipId;
+    for (const childId of snapshot.childIds) {
+      const child = state.clips[childId];
+      if (child?.notebookId === source.id && !child.parentClipId) child.parentClipId = clip.id;
+    }
+    if (snapshot.position) {
+      source.mindMapPositions = { ...(source.mindMapPositions ?? {}), [clip.id]: { ...snapshot.position } };
+    }
+
+    const now = new Date().toISOString();
+    source.updatedAt = now;
+    target.updatedAt = now;
     restored = true;
   });
   return restored;
