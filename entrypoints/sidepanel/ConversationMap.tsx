@@ -1,106 +1,101 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Background, BackgroundVariant, Controls, Handle, MarkerType, MiniMap, Position,
-  ReactFlow, type Edge, type Node, type NodeProps, type ReactFlowInstance
-} from '@xyflow/react';
-import {
   conversationNodeLocator, findConversationNodeForClip, isConversationGraphSnapshot,
-  type ConversationGraphNode,
-  type ConversationGraphSnapshot
+  type ConversationGraphNode, type ConversationGraphSnapshot
 } from '../../lib/conversation-graph';
+import { buildConversationTurns, conversationPreview, defaultTurnMessage, filterConversationTurns } from '../../lib/conversation-navigation';
 import type { ExtensionMessage } from '../../lib/messages';
 import { isSameConversationUrl, isSupportedConversationUrl } from '../../lib/conversation-url';
 import type { Clip } from '../../lib/models';
 import { sendContentMessage } from '../../lib/tab-content';
-
-interface ConversationNodeData extends Record<string, unknown> {
-  message: ConversationGraphNode;
-  active: boolean;
-  matched: boolean;
-  dimmed: boolean;
-  onShowClips: (clipIds: string[]) => void;
-}
-
-type ConversationFlowNode = Node<ConversationNodeData, 'conversation'>;
-
-const nodeTypes = { conversation: ConversationNodeCard };
+import { t } from '../../lib/i18n';
 
 interface ConversationMapProps {
+  active?: boolean;
+  clipsById?: Record<string, Clip>;
   onShowClips: (clipIds: string[]) => void;
   focusClip?: Clip;
   targetTabId?: number;
   onFocusHandled: () => void;
 }
 
-export function ConversationMap({ onShowClips, focusClip, targetTabId, onFocusHandled }: ConversationMapProps) {
+const NO_CLIPS: Record<string, Clip> = {};
+
+export function ConversationMap({ active = true, clipsById = NO_CLIPS, onShowClips, focusClip, targetTabId, onFocusHandled }: ConversationMapProps) {
   const [snapshot, setSnapshot] = useState<ConversationGraphSnapshot | null>(null);
-  const [tabId, setTabId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [onlyClipped, setOnlyClipped] = useState(false);
   const [query, setQuery] = useState('');
-  const [matchIndex, setMatchIndex] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
   const [followPage, setFollowPage] = useState(true);
   const [inlineError, setInlineError] = useState('');
-  const [instance, setInstance] = useState<ReactFlowInstance<ConversationFlowNode, Edge> | null>(null);
+  const [locatingNodeId, setLocatingNodeId] = useState<string>();
+  const [expandedPreview, setExpandedPreview] = useState(false);
+  const [showSourceText, setShowSourceText] = useState(false);
   const tabIdRef = useRef<number | null>(null);
   const conversationUrlRef = useRef('');
   const requestIdRef = useRef(0);
-  const flowNodesRef = useRef<ConversationFlowNode[]>([]);
+  const locateRequestRef = useRef(0);
+  const sourceKeyRef = useRef('');
+  const directoryRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef(new Map<string, HTMLButtonElement>());
 
   const refresh = useCallback(async (requestedTabId?: number) => {
     const requestId = ++requestIdRef.current;
     setLoading(true);
     setError('');
     setInlineError('');
-    const tab = requestedTabId !== undefined
-      ? await chrome.tabs.get(requestedTabId).catch(() => undefined)
-      : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-    if (requestId !== requestIdRef.current) return;
-    if (tab?.id === undefined || !isSupportedConversationUrl(tab.url)) {
-      setTabId(tab?.id ?? null);
-      tabIdRef.current = tab?.id ?? null;
-      conversationUrlRef.current = '';
-      setSnapshot(null);
-      setError('Open a ChatGPT, Claude, or Gemini conversation first');
-      setLoading(false);
-      return;
-    }
-    const previousTabId = tabIdRef.current;
-    if (previousTabId !== null && previousTabId !== tab.id) {
-      void chrome.tabs.sendMessage(previousTabId, { version: 2, type: 'STOP_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
-    }
-    setTabId(tab.id);
-    tabIdRef.current = tab.id;
     try {
+      const tab = requestedTabId !== undefined
+        ? await chrome.tabs.get(requestedTabId)
+        : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+      if (requestId !== requestIdRef.current) return;
+      const previousTabId = tabIdRef.current;
+      if (previousTabId !== null && previousTabId !== tab?.id) {
+        void chrome.tabs.sendMessage(previousTabId, { version: 2, type: 'STOP_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
+      }
+      tabIdRef.current = tab?.id ?? null;
+      if (tab?.id === undefined || !isSupportedConversationUrl(tab.url)) {
+        conversationUrlRef.current = '';
+        setSnapshot(null);
+        setError(t('openConversationFirst'));
+        return;
+      }
+      if (previousTabId !== tab.id || !isSameConversationUrl(tab.url!, conversationUrlRef.current)) {
+        conversationUrlRef.current = '';
+        setSnapshot(null);
+      }
       await sendContentMessage(tab.id, { version: 2, type: 'START_CONVERSATION_GRAPH' }, 12);
       let response: ExtensionMessage | undefined;
       for (let attempt = 0; attempt < 12; attempt += 1) {
+        if (requestId !== requestIdRef.current) return;
         response = await sendContentMessage(tab.id, { version: 2, type: 'GET_CONVERSATION_GRAPH' }, 2);
         if (response?.type === 'CONVERSATION_GRAPH_RESULT' && response.ok && isConversationGraphSnapshot(response.snapshot)) break;
         await new Promise(resolve => window.setTimeout(resolve, 250));
       }
-      if (requestId !== requestIdRef.current || tabIdRef.current !== tab.id) return;
-      if (response?.type !== 'CONVERSATION_GRAPH_RESULT' || !response.ok || !isConversationGraphSnapshot(response.snapshot)) {
-        throw new Error(response?.type === 'CONVERSATION_GRAPH_RESULT' ? response.error : 'invalid response');
-      }
+      if (requestId !== requestIdRef.current) return;
+      if (response?.type !== 'CONVERSATION_GRAPH_RESULT' || !response.ok || !isConversationGraphSnapshot(response.snapshot)) throw new Error('invalid response');
       conversationUrlRef.current = response.snapshot.conversationUrl;
       setSnapshot(response.snapshot);
     } catch {
       if (requestId !== requestIdRef.current) return;
       setSnapshot(null);
-      setError('Unable to read this conversation yet. Wait for the page to finish loading, then try again.');
+      setError(t('unableReadConversation'));
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void refresh();
-    const activated = () => void refresh();
-    const updated = (updatedTabId: number, change: chrome.tabs.OnUpdatedInfo) => {
-      if (updatedTabId === tabIdRef.current && (change.status === 'complete' || change.url)) void refresh(updatedTabId);
+    if (!active) return;
+    setLocatingNodeId(undefined);
+    void refresh(targetTabId);
+    const activated = ({ tabId }: { tabId: number }) => {
+      if (tabId !== tabIdRef.current) void refresh(tabId);
+    };
+    const updated = (tabId: number, change: chrome.tabs.OnUpdatedInfo) => {
+      if (tabId === tabIdRef.current && (change.status === 'complete' || change.url)) void refresh(tabId);
     };
     const message = (value: ExtensionMessage, sender: chrome.runtime.MessageSender) => {
       if (sender.tab?.id !== tabIdRef.current || value?.version !== 2) return;
@@ -109,6 +104,8 @@ export function ConversationMap({ onShowClips, focusClip, targetTabId, onFocusHa
         setLoading(false);
       }
       if (value.type === 'CONVERSATION_GRAPH_CLEARED') {
+        locateRequestRef.current += 1;
+        setLocatingNodeId(undefined);
         conversationUrlRef.current = value.conversationUrl;
         setSnapshot(null);
         setLoading(true);
@@ -118,8 +115,7 @@ export function ConversationMap({ onShowClips, focusClip, targetTabId, onFocusHa
       }
     };
     const heartbeat = window.setInterval(() => {
-      const currentTabId = tabIdRef.current;
-      if (currentTabId !== null) void chrome.tabs.sendMessage(currentTabId, { version: 2, type: 'START_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
+      if (tabIdRef.current !== null) void chrome.tabs.sendMessage(tabIdRef.current, { version: 2, type: 'START_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
     }, 45_000);
     chrome.tabs.onActivated.addListener(activated);
     chrome.tabs.onUpdated.addListener(updated);
@@ -130,212 +126,223 @@ export function ConversationMap({ onShowClips, focusClip, targetTabId, onFocusHa
       chrome.runtime.onMessage.removeListener(message);
       window.clearInterval(heartbeat);
       requestIdRef.current += 1;
-      const currentTabId = tabIdRef.current;
-      if (currentTabId !== null) void chrome.tabs.sendMessage(currentTabId, { version: 2, type: 'STOP_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
+      locateRequestRef.current += 1;
+      if (tabIdRef.current !== null) void chrome.tabs.sendMessage(tabIdRef.current, { version: 2, type: 'STOP_CONVERSATION_GRAPH' } satisfies ExtensionMessage).catch(() => undefined);
     };
-  }, [refresh]);
+  }, [active, refresh, targetTabId]);
+
+  const turns = useMemo(() => buildConversationTurns(snapshot?.nodes ?? []), [snapshot?.nodes]);
+  const visibleTurns = useMemo(() => filterConversationTurns(turns, onlyClipped, query), [turns, onlyClipped, query]);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const matches = useMemo(() => normalizedQuery ? visibleTurns.flatMap(turn => turn.messages)
+    .filter(message => message.searchText.toLocaleLowerCase().includes(normalizedQuery)) : [], [normalizedQuery, visibleTurns]);
+  const currentTurn = turns.find(turn => turn.messages.some(message => message.id === snapshot?.activeNodeId));
+  const selectedTurn = visibleTurns.find(turn => turn.messages.some(message => message.id === selectedNodeId)) ??
+    visibleTurns.find(turn => turn.id === currentTurn?.id) ?? visibleTurns[0];
+  const selectedMessage = selectedTurn?.messages.find(message => message.id === selectedNodeId) ?? (selectedTurn ? defaultTurnMessage(selectedTurn) : undefined);
+  const selectedClips = selectedTurn?.clipIds.flatMap(id => clipsById[id] ? [clipsById[id]!] : []) ?? [];
+  const matchIndex = matches.findIndex(message => message.id === selectedMessage?.id);
+  const previewText = selectedMessage?.searchText || selectedMessage?.text || '';
+  const canExpandPreview = previewText.length > 160 || previewText.split('\n').length > 3;
+  const outline = selectedMessage?.outline;
+  const hasOutline = Boolean(outline?.items.length);
+  const outlineBaseLevel = Math.min(...(outline?.items.filter(item => item.kind === 'heading').map(item => item.level) ?? []), 6);
+
+  useEffect(() => { setExpandedPreview(false); setShowSourceText(false); }, [selectedMessage?.id]);
 
   useEffect(() => {
-    if (targetTabId !== undefined) void refresh(targetTabId);
-  }, [refresh, targetTabId]);
+    if (!snapshot || !turns.length) return;
+    const key = `${tabIdRef.current}:${snapshot.conversationUrl}`;
+    if (key === sourceKeyRef.current) return;
+    sourceKeyRef.current = key;
+    setQuery('');
+    setOnlyClipped(false);
+    setSelectedNodeId(snapshot.activeNodeId ?? defaultTurnMessage(turns[0]!).id);
+    setFollowPage(true);
+    setLocatingNodeId(undefined);
+    if (directoryRef.current) directoryRef.current.scrollTop = 0;
+  }, [snapshot, turns]);
 
-  const visibleMessages = useMemo(() => {
-    if (!snapshot) return [];
-    return onlyClipped ? snapshot.nodes.filter(node => node.clipIds.length > 0) : snapshot.nodes;
-  }, [onlyClipped, snapshot]);
-  const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN');
-  const matches = useMemo(() => normalizedQuery
-    ? visibleMessages.filter(node => node.searchText.toLocaleLowerCase('zh-CN').includes(normalizedQuery))
-    : [], [normalizedQuery, visibleMessages]);
-
-  const flow = useMemo(() => {
-    const activeOrder = snapshot?.nodes.find(node => node.id === snapshot.activeNodeId)?.order ?? -1;
-    const matchIds = new Set(matches.map(node => node.id));
-    const nodes: ConversationFlowNode[] = visibleMessages.map((message, index) => ({
-      id: message.id,
-      type: 'conversation',
-      position: {
-        x: message.role === 'user' ? 24 : message.role === 'assistant' ? 238 : 132,
-        y: index * 150 + 24
-      },
-      sourcePosition: Position.Bottom,
-      targetPosition: Position.Top,
-      draggable: false,
-      selectable: true,
-      deletable: false,
-      className: `conversation-flow-node role-${message.role}${message.id === selectedNodeId ? ' selected-by-user' : ''}`,
-      data: {
-        message,
-        active: message.id === snapshot?.activeNodeId,
-        matched: matchIds.has(message.id),
-        dimmed: Boolean(normalizedQuery && !matchIds.has(message.id)),
-        onShowClips
-      }
-    }));
-    const edges: Edge[] = nodes.slice(1).map((node, index) => {
-      const source = nodes[index]!;
-      const sourceMessage = source.data.message;
-      const targetMessage = node.data.message;
-      const activePath = targetMessage.order <= activeOrder;
-      const omitted = Math.max(0, targetMessage.order - sourceMessage.order - 1);
-      return {
-        id: `visible-${source.id}-${node.id}`,
-        source: source.id,
-        target: node.id,
-        type: 'smoothstep',
-        deletable: false,
-        label: onlyClipped && omitted > 0 ? `${omitted} omitted` : undefined,
-        labelStyle: { fontSize: 9, fill: '#6d746f' },
-        labelBgStyle: { fill: '#eef1ef', fillOpacity: .95 },
-        labelBgPadding: [4, 2],
-        labelBgBorderRadius: 5,
-        markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12 },
-        style: {
-          stroke: activePath ? '#3f7d68' : '#aebbb5',
-          strokeWidth: activePath ? 2.2 : 1.5,
-          strokeDasharray: onlyClipped && omitted > 0 ? '6 5' : undefined
-        }
-      };
-    });
-    return { nodes, edges };
-  }, [matches, normalizedQuery, onShowClips, onlyClipped, selectedNodeId, snapshot, visibleMessages]);
-
-  flowNodesRef.current = flow.nodes;
-
-  const focusNode = useCallback((nodeId: string) => {
-    const node = flowNodesRef.current.find(item => item.id === nodeId);
-    if (!node || !instance) return;
-    void instance.fitView({ nodes: [node], padding: 1.4, maxZoom: 1.15, duration: 280 });
-  }, [instance]);
+  const revealTurn = useCallback((turnId: string) => {
+    const container = directoryRef.current;
+    const row = rowRefs.current.get(turnId);
+    if (!container || !row) return;
+    const bounds = container.getBoundingClientRect();
+    const rowBounds = row.getBoundingClientRect();
+    if (rowBounds.top < bounds.top) container.scrollTop += rowBounds.top - bounds.top;
+    else if (rowBounds.bottom > bounds.bottom) container.scrollTop += rowBounds.bottom - bounds.bottom;
+  }, []);
 
   useEffect(() => {
-    if (!followPage || !snapshot?.activeNodeId) return;
-    focusNode(snapshot.activeNodeId);
-  }, [focusNode, followPage, snapshot?.activeNodeId]);
+    if (active && followPage && !query && !onlyClipped && currentTurn) revealTurn(currentTurn.id);
+  }, [active, followPage, currentTurn?.id, query, onlyClipped, revealTurn]);
 
   useEffect(() => {
-    if (!focusClip || !snapshot) return;
+    if (!active || !focusClip || !snapshot) return;
     const sameConversation = focusClip.platform === snapshot.platform && (
       Boolean(focusClip.conversationId && focusClip.conversationId === snapshot.conversationId) ||
-      isSameConversationUrl(focusClip.conversationUrl, snapshot.conversationUrl)
-    );
+      isSameConversationUrl(focusClip.conversationUrl, snapshot.conversationUrl));
     if (!sameConversation) return;
     const target = findConversationNodeForClip(snapshot.nodes, focusClip);
-    if (!target || !instance) return;
+    if (!target) return;
+    setQuery('');
+    setOnlyClipped(false);
     setFollowPage(false);
     setSelectedNodeId(target.id);
-    window.setTimeout(() => focusNode(target.id), 30);
     onFocusHandled();
-  }, [focusClip, focusNode, instance, onFocusHandled, snapshot]);
+  }, [active, focusClip, onFocusHandled, snapshot]);
 
-  const matchSignature = matches.map(node => node.id).join('|');
   useEffect(() => {
-    setMatchIndex(0);
-    if (matches[0]) window.setTimeout(() => focusNode(matches[0]!.id), 20);
-  }, [focusNode, matchSignature, normalizedQuery]);
+    if (active && selectedTurn) revealTurn(selectedTurn.id);
+  }, [active, selectedTurn?.id, revealTurn]);
+
+  const selectMessage = (message: ConversationGraphNode) => {
+    setSelectedNodeId(message.id);
+    setFollowPage(false);
+    setInlineError('');
+  };
 
   const moveMatch = (direction: 1 | -1) => {
     if (!matches.length) return;
-    const next = (matchIndex + direction + matches.length) % matches.length;
-    setMatchIndex(next);
-    focusNode(matches[next]!.id);
+    const next = matchIndex < 0 ? (direction === 1 ? 0 : matches.length - 1) : (matchIndex + direction + matches.length) % matches.length;
+    selectMessage(matches[next]!);
   };
 
-  const openMessage = async (nodeId: string) => {
+  const returnToSource = () => {
+    setQuery('');
+    setOnlyClipped(false);
+    setSelectedNodeId(snapshot?.activeNodeId);
+    setFollowPage(true);
+  };
+
+  const openMessage = async (message: ConversationGraphNode) => {
+    const tabId = tabIdRef.current;
     if (tabId === null || !snapshot) return;
-    const message = snapshot.nodes.find(node => node.id === nodeId);
-    if (!message) return;
-    setSelectedNodeId(nodeId);
-    setFollowPage(false);
+    const url = snapshot.conversationUrl;
+    const request = ++locateRequestRef.current;
+    setLocatingNodeId(message.id);
     setInlineError('');
-    await chrome.tabs.update(tabId, { active: true });
-    const response = await sendContentMessage(tabId, {
-      version: 2,
-      type: 'SCROLL_TO_CONVERSATION_NODE',
-      nodeId,
-      conversationUrl: snapshot.conversationUrl,
-      locator: conversationNodeLocator(message)
-    }, 12).catch(() => undefined);
-    if (response?.type === 'SCROLL_TO_CONVERSATION_NODE_RESULT' && response.ok) {
-      setSnapshot(current => current ? { ...current, activeNodeId: nodeId } : current);
-      return;
+    setFollowPage(false);
+    try {
+      await chrome.tabs.update(tabId, { active: true });
+      const response = await sendContentMessage(tabId, {
+        version: 2, type: 'SCROLL_TO_CONVERSATION_NODE', nodeId: message.id,
+        conversationUrl: url, locator: conversationNodeLocator(message)
+      }, 12);
+      if (request !== locateRequestRef.current || tabId !== tabIdRef.current || url !== conversationUrlRef.current) return;
+      if (response?.type !== 'SCROLL_TO_CONVERSATION_NODE_RESULT' || !response.ok) throw new Error('source unavailable');
+      setSnapshot(current => current?.conversationUrl === url ? { ...current, activeNodeId: message.id } : current);
+    } catch {
+      if (request === locateRequestRef.current && url === conversationUrlRef.current) setInlineError(t('messageChanged'));
+    } finally {
+      if (request === locateRequestRef.current) setLocatingNodeId(undefined);
     }
-    setInlineError('This message has changed. Refresh the conversation map and try again.');
-    await refresh(tabId);
   };
 
-  if (loading && !snapshot) return <ConversationState title="Reading this conversation…" />;
-  if (error && !snapshot) return <ConversationState title={error} action="Try again" onAction={() => void refresh()} />;
-  if (!snapshot || snapshot.nodes.length === 0) return <ConversationState title="There are no messages to navigate on this page" action="Try again" onAction={() => void refresh()} />;
+  if (loading && !snapshot) return <ConversationState title={t('readingConversation')} />;
+  if (error && !snapshot) return <ConversationState title={error} action={t('tryAgain')} onAction={() => void refresh()} />;
+  if (!snapshot || !turns.length) return <ConversationState title={t('noMessages')} action={t('tryAgain')} onAction={() => void refresh()} />;
 
-  return <section className="conversation-map" aria-label="Current conversation map">
-    <div className="conversation-map-head">
-      <div><strong>{snapshot.conversationTitle}</strong><span>{snapshot.nodes.length} {snapshot.nodes.length === 1 ? 'message' : 'messages'} · visible path</span></div>
-      <button onClick={() => void refresh()}>Refresh</button>
-      <button onClick={() => void instance?.fitView({ padding: .2, duration: 300 })}>Overview</button>
-    </div>
-    <div className="conversation-filters" role="group" aria-label="Message range">
-      <button className={!onlyClipped ? 'active' : ''} onClick={() => setOnlyClipped(false)}>All messages</button>
-      <button className={onlyClipped ? 'active' : ''} onClick={() => setOnlyClipped(true)}>Clipped only <span>{snapshot.nodes.filter(node => node.clipIds.length).length}</span></button>
-      <button className={followPage ? 'follow active' : 'follow'} onClick={() => setFollowPage(value => !value)}>Follow page</button>
-    </div>
+  return <section className="conversation-map" aria-label={t('currentConversationMap')}>
+    <header className="conversation-map-head navigation-view-head">
+      <div><h2>{snapshot.conversationTitle}</h2><p><span>{t('conversationTurnCount', String(turns.length))}</span><span>{t('messageOther', String(snapshot.nodes.length))}</span></p></div>
+      <details className="conversation-options"><summary>{t('conversationOptions')}</summary><div>
+        <label><input type="checkbox" checked={onlyClipped} onChange={event => { setOnlyClipped(event.target.checked); setFollowPage(false); }} />{t('turnsWithClips')}</label>
+        <button disabled={loading} onClick={() => void refresh()}>{t('refresh')}</button>
+        <button disabled={!snapshot.activeNodeId} onClick={returnToSource}>{t('backToSourcePosition')}</button>
+      </div></details>
+    </header>
     <div className="conversation-search">
-      <input value={query} placeholder="Search this conversation" aria-label="Search this conversation" onChange={event => setQuery(event.target.value)} onKeyDown={event => {
-        if (event.key === 'Enter') moveMatch(event.shiftKey ? -1 : 1);
-      }} />
-      {normalizedQuery && <><span>{matches.length ? `${matchIndex + 1}/${matches.length}` : '0'}</span><button disabled={!matches.length} onClick={() => moveMatch(-1)}>↑</button><button disabled={!matches.length} onClick={() => moveMatch(1)}>↓</button></>}
+      <input type="search" value={query} placeholder={t('searchQuestionsAnswers')} aria-label={t('searchQuestionsAnswers')} onChange={event => {
+        const value = event.target.value;
+        setQuery(value);
+        setFollowPage(false);
+        const search = value.trim().toLocaleLowerCase();
+        const first = turns.filter(turn => !onlyClipped || turn.clipIds.length).flatMap(turn => turn.messages)
+          .find(message => search && message.searchText.toLocaleLowerCase().includes(search));
+        if (first) setSelectedNodeId(first.id);
+      }} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} />
+      <label className="conversation-follow"><input type="checkbox" checked={followPage} onChange={() => followPage ? setFollowPage(false) : returnToSource()} />{t('followOriginal')}</label>
     </div>
-    {inlineError && <p className="conversation-inline-error" role="status">{inlineError}</p>}
-    <div className="conversation-canvas">
-      <ReactFlow<ConversationFlowNode, Edge>
-        nodes={flow.nodes}
-        edges={flow.edges}
-        nodeTypes={nodeTypes}
-        onInit={setInstance}
-        onNodeClick={(_event, node) => void openMessage(node.id)}
-        onMoveStart={event => { if (event) setFollowPage(false); }}
-        fitView
-        fitViewOptions={{ padding: .2 }}
-        minZoom={.18}
-        maxZoom={2}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable
-        deleteKeyCode={null}
-        proOptions={{ hideAttribution: false }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1.05} color="#d2d9d6" />
-        <MiniMap pannable zoomable nodeColor={node => {
-          const message = (node.data as ConversationNodeData).message;
-          return message.role === 'user' ? '#e7b85b' : message.role === 'assistant' ? '#64a189' : '#9aa5a0';
-        }} />
-        <Controls showInteractive={false} />
-      </ReactFlow>
+    {onlyClipped && <p className="conversation-filter-status">{t('turnsWithClips')}<button onClick={() => setOnlyClipped(false)}>{t('clearConversationFilters')}</button></p>}
+    {normalizedQuery && <div className="conversation-search-results" role="status">
+      <span>{t('searchMatchCount', [String(matchIndex + 1), String(matches.length)])}</span>
+      <button disabled={!matches.length} onClick={() => moveMatch(-1)}>{t('previousMatch')}</button>
+      <button disabled={!matches.length} onClick={() => moveMatch(1)}>{t('nextMatch')}</button>
+    </div>}
+    <div className="conversation-directory" ref={directoryRef} onWheel={() => setFollowPage(false)} onTouchMove={() => setFollowPage(false)}>
+      <ol aria-label={t('conversationDirectory')}>
+        {visibleTurns.map((turn, index) => {
+          const selected = turn.id === selectedTurn?.id;
+          const atSource = turn.id === currentTurn?.id;
+          const omitted = turn.number - (visibleTurns[index - 1]?.number ?? 0) - 1;
+          return <li key={turn.id}>
+            {omitted > 0 && <p className="conversation-omitted">{t('omittedTurns', String(omitted))}</p>}
+            <button className={`conversation-turn${selected ? ' is-selected' : ''}${atSource ? ' at-source' : ''}`}
+              ref={element => { if (element) rowRefs.current.set(turn.id, element); else rowRefs.current.delete(turn.id); }}
+              aria-pressed={selected} aria-current={atSource ? 'location' : undefined}
+              onKeyDown={event => {
+                const offset = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+                if (!offset) return;
+                event.preventDefault();
+                const next = visibleTurns[index + offset];
+                if (next) { selectMessage(defaultTurnMessage(next)); rowRefs.current.get(next.id)?.focus(); }
+              }}
+              onClick={() => selectMessage(defaultTurnMessage(turn))}>
+              <span className="conversation-turn-number">{String(turn.number).padStart(2, '0')}</span>
+              <span className="conversation-turn-copy">
+                <strong title={turn.question ? conversationPreview(turn.question) : turn.messages[0]!.title}>{turn.question ? conversationPreview(turn.question) : t(turn.answer ? 'standaloneAnswer' : 'roleContent')}</strong>
+                <span className="conversation-turn-preview">{turn.answer ? conversationPreview(turn.answer) : turn.question ? t('noAnswerYet') : conversationPreview(turn.messages[0]!)}</span>
+                <span className="conversation-turn-markers">
+                  {turn.clipIds.length > 0 && <span>{t('turnClipBadge', String(turn.clipIds.length))}</span>}
+                  {selected && <span className="preview-marker">{t('previewing')}</span>}
+                  {atSource && <span className="source-marker">{t('sourcePosition')}</span>}
+                  {turn.messages.some(message => message.branch) && <span>{t('hasAnswerVersions')}</span>}
+                </span>
+              </span>
+            </button>
+          </li>;
+        })}
+      </ol>
+      {!visibleTurns.length && <div className="conversation-no-results"><p>{t('noMatchingTurns')}</p><button onClick={() => { setQuery(''); setOnlyClipped(false); }}>{t('clearConversationFilters')}</button></div>}
     </div>
-    <p className="map-help">Only the path currently visible on the page is read; the full conversation is not saved. Click a node to open its message. Nodes with a “Clips” badge can open the clip map.</p>
+    {selectedTurn && selectedMessage && <section className="conversation-detail" aria-label={t('turnDetails')}>
+      <header><span className="conversation-detail-round">{t('conversationRound', String(selectedTurn.number).padStart(2, '0'))}</span>
+        <h3>{selectedTurn.question ? conversationPreview(selectedTurn.question) : selectedMessage.title}</h3></header>
+      <div className="conversation-message-switch" role="group" aria-label={t('previewMessage')}>
+        {selectedTurn.messages.map(message => <button key={message.id} aria-pressed={message.id === selectedMessage.id} onClick={() => selectMessage(message)}>{t(message.role === 'user' ? 'question' : message.role === 'assistant' ? 'answer' : 'roleContent')}</button>)}
+      </div>
+      <div className="conversation-preview-heading"><h4>{t('sourcePreview')}</h4>
+        {hasOutline ? <button className="conversation-preview-toggle" aria-pressed={showSourceText} onClick={() => setShowSourceText(value => !value)}>{t(showSourceText ? 'viewSourceOutline' : 'viewSourceText')}</button>
+          : canExpandPreview && <button aria-expanded={expandedPreview} onClick={() => setExpandedPreview(value => !value)}>{t(expandedPreview ? 'collapseSourcePreview' : 'expandSourcePreview')}</button>}
+        {selectedMessage.branch && <span>{t('answerVersion', [String(selectedMessage.branch.index), String(selectedMessage.branch.count)])}</span>}
+        {selectedMessage.isReport && <span>{t('report')}</span>}
+      </div>
+      {hasOutline && !showSourceText ? <div className="conversation-outline" tabIndex={0} aria-label={t('sourceOutline')}>
+        <ol>{outline!.items.map((item, index) => <li key={index} data-kind={item.kind}
+          style={{ paddingInlineStart: `${Math.max(0, Math.min(3, item.level - outlineBaseLevel)) * 12}px` }}>
+          <strong>{item.text}</strong>
+        </li>)}</ol>
+        {outline!.truncated && <p className="conversation-outline-note">{t('sourceOutlineTruncated')}</p>}
+      </div> : <p className={`conversation-detail-text${expandedPreview || hasOutline ? ' expanded' : ''}`} tabIndex={0} aria-label={t('sourcePreview')}>{previewText || t('emptyMessage')}</p>}
+      <section className="conversation-turn-clips" aria-label={t('turnClips', String(selectedClips.length))}>
+        <h4>{t('turnClips', String(selectedClips.length))}</h4>
+        {selectedClips.length ? <ul>{selectedClips.map(clip => <li key={clip.id}>
+          <button onClick={() => onShowClips([clip.id])} aria-label={t('viewThisClip', clip.originalText)}>
+            <blockquote>{clip.originalText}</blockquote>
+          </button>
+        </li>)}</ul> : <p className="conversation-no-clips">{t('noTurnClips')}</p>}
+      </section>
+      {inlineError && <p className="conversation-inline-error" role="alert">{inlineError}</p>}
+      <div className="conversation-detail-actions">
+        <button className="conversation-locate" disabled={Boolean(locatingNodeId)} onClick={() => void openMessage(selectedMessage)}>{t(locatingNodeId ? 'locatingOriginal' : selectedMessage.role === 'user' ? 'locateQuestion' : selectedMessage.role === 'assistant' ? 'locateAnswer' : 'locateMessage')}</button>
+        <button disabled={!selectedClips.length} onClick={() => onShowClips(selectedClips.map(clip => clip.id))}>{t('viewInClipMap')}</button>
+      </div>
+    </section>}
+    <p className="conversation-scope">{t('conversationDirectoryHelp')}</p>
   </section>;
 }
 
-function ConversationNodeCard({ data }: NodeProps<ConversationFlowNode>) {
-  const { message } = data;
-  return <div className={`conversation-node-card${data.active ? ' is-active' : ''}${data.matched ? ' is-match' : ''}${data.dimmed ? ' is-dimmed' : ''}`}>
-    <Handle type="target" position={Position.Top} />
-    <div className="conversation-node-meta">
-      <span>{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'AI' : 'Content'} · {message.order + 1}</span>
-      {message.isReport && <i>Report</i>}
-      {message.branch && <i>Branch {message.branch.index}/{message.branch.count}</i>}
-      {data.active && <i className="current">Current</i>}
-    </div>
-    <strong className="conversation-node-title">{message.title}</strong>
-    <p className="conversation-node-preview">{message.text || 'Empty message'}</p>
-    {message.clipIds.length > 0 && <button className="conversation-clip-badge nodrag" onClick={event => {
-      event.stopPropagation();
-      data.onShowClips(message.clipIds);
-    }}>Clips {message.clipIds.length} →</button>}
-    <Handle type="source" position={Position.Bottom} />
-  </div>;
-}
-
 function ConversationState({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
-  return <div className="conversation-state"><div>⌘</div><strong>{title}</strong>{action && <button onClick={onAction}>{action}</button>}</div>;
+  return <div className="conversation-state" role="status"><strong>{title}</strong>{action && <button onClick={onAction}>{action}</button>}</div>;
 }

@@ -1,5 +1,7 @@
 # Chrome Web Store 上架文案
 
+四语种商店字段（English、简体中文、日本語、한국어）见 [`STORE_LISTING_LOCALIZED.md`](STORE_LISTING_LOCALIZED.md)。本文件保留中文主版本和权限披露，便于提交 Privacy Practices。
+
 ## 名称
 
 对话摘录 Dialogue Clipper

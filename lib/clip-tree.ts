@@ -5,6 +5,29 @@ export interface ClipTreeNode {
   children: ClipTreeNode[];
 }
 
+export interface ClipFocusResolution {
+  clips: Clip[];
+  ambiguous: boolean;
+  omittedOtherNotebooks: boolean;
+}
+
+/** Chooses every matching clip in one notebook instead of arbitrarily taking the first. */
+export function resolveClipFocus(candidates: Clip[], currentNotebookId?: string): ClipFocusResolution {
+  const inCurrentNotebook = currentNotebookId
+    ? candidates.filter(clip => clip.notebookId === currentNotebookId)
+    : [];
+  if (inCurrentNotebook.length) {
+    return {
+      clips: inCurrentNotebook,
+      ambiguous: false,
+      omittedOtherNotebooks: inCurrentNotebook.length < candidates.length
+    };
+  }
+  const notebookIds = new Set(candidates.map(clip => clip.notebookId));
+  if (notebookIds.size > 1) return { clips: [], ambiguous: true, omittedOtherNotebooks: false };
+  return { clips: candidates, ambiguous: false, omittedOtherNotebooks: false };
+}
+
 export function buildClipTree(clips: Clip[]): ClipTreeNode[] {
   const byId = new Map(clips.map(clip => [clip.id, clip]));
   const children = new Map<string, Clip[]>();

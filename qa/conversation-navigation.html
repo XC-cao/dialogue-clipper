@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>对话导航 · 方案三开发验收</title>
+<style>
+  * { box-sizing:border-box } body { margin:0;padding:16px;background:#e7e5e0;color:#292824;font:14px/1.5 system-ui,sans-serif }
+  header { display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px } header strong { margin-right:10px } button,select { font:inherit;padding:5px 9px;border:1px solid #c5c1b8;border-radius:6px;background:#faf9f6;cursor:pointer }
+  #comparison { display:flex;gap:20px;align-items:start;width:max-content } figure { margin:0 } figcaption { margin-bottom:8px;color:#625f58 }
+  iframe { display:block;border:0;background:#f6f5f1;width:480px;height:860px } img { display:block;width:480px;height:auto } [hidden] { display:none!important } #status { font-size:12px;color:#625f58 }
+</style></head>
+<body><header><strong>对话导航 · 实际组件预览</strong><label>宽度 <select id="width"><option>480</option><option>420</option><option>320</option><option>520</option></select></label><label>高度 <select id="height"><option>860</option><option>650</option></select></label><button id="compare">显示设计稿</button><button id="long">20 轮样例</button><button id="reset">6 轮样例</button><span id="status">示例数据，不连接真实对话</span></header>
+<div id="comparison"><figure id="reference" hidden><figcaption>已选方案 3 · 设计参考</figcaption><img src="./conversation-navigation-source.png" alt="方案三：轮次目录与详情"></figure><figure><figcaption>运行中的扩展组件</figcaption><iframe id="preview" title="对话导航预览" src="./conversation-navigation-frame.html"></iframe></figure></div>
+<script>
+  const preview = document.querySelector('#preview');
+  document.querySelector('#width').onchange = event => preview.style.width = event.target.value + 'px';
+  document.querySelector('#height').onchange = event => preview.style.height = event.target.value + 'px';
+  document.querySelector('#compare').onclick = () => { const reference = document.querySelector('#reference'); reference.hidden = !reference.hidden; };
+  document.querySelector('#long').onclick = () => preview.src = './conversation-navigation-frame.html?rounds=20';
+  document.querySelector('#reset').onclick = () => preview.src = './conversation-navigation-frame.html';
+  window.addEventListener('message', event => { if (event.origin === location.origin && event.data?.previewStatus) document.querySelector('#status').textContent = event.data.previewStatus; });
+</script></body></html>

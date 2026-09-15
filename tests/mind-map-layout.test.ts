@@ -15,6 +15,12 @@ const clip = (id: string, parentClipId?: string): Clip => ({
 });
 
 describe('mind map layout', () => {
+  it('leaves room between nodes at the shared readable font size', () => {
+    const result = layoutMindMap(notebook, [clip('a'), clip('b'), clip('c')]);
+    const ys = ['a', 'b', 'c'].map(id => result.positions[id]!.y).sort((a, b) => a - b);
+    expect(ys[1]! - ys[0]!).toBeGreaterThanOrEqual(152 + 32);
+    expect(ys[2]! - ys[1]!).toBeGreaterThanOrEqual(152 + 32);
+  });
   it('为根节点和多级摘录生成从左向右的坐标与连接', () => {
     const result = layoutMindMap(notebook, [clip('a'), clip('b', 'a'), clip('c')]);
     expect(result.edges).toEqual([

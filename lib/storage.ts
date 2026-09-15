@@ -7,6 +7,7 @@ import {
   type Notebook,
   type StoredState
 } from './models';
+import { t } from './i18n';
 
 const STORAGE_KEY = 'dialogueClipperState';
 const FALLBACK_TIME = '1970-01-01T00:00:00.000Z';
@@ -51,7 +52,7 @@ export function normalizeState(value: unknown): StoredState {
         : undefined;
       notebooks[notebookId] = {
         id: notebookId,
-        title: stringValue(value.title, 'Untitled notebook'),
+        title: stringValue(value.title, t('untitledNotebook')),
         description: stringValue(value.description, ''),
         clipIds: Array.isArray(value.clipIds) ? [...new Set(value.clipIds.filter((id): id is string => typeof id === 'string'))] : [],
         mindMapPositions: positions && Object.keys(positions).length ? positions : undefined,
@@ -75,8 +76,8 @@ export function normalizeState(value: unknown): StoredState {
     while (notebooks[recoveredId]) recoveredId += '_1';
     notebooks[recoveredId] = {
       id: recoveredId,
-      title: 'Recovered clips',
-      description: 'Recovered from incomplete legacy or corrupted data.',
+      title: t('recoveredClips'),
+      description: t('recoveredClipsDescription'),
       clipIds: [],
       createdAt: FALLBACK_TIME,
       updatedAt: FALLBACK_TIME,
@@ -146,7 +147,7 @@ function normalizeCapturePayload(value: unknown): CapturePayload | undefined {
   return {
     originalText,
     platform,
-    conversationTitle: stringValue(value.conversationTitle, 'Recovered clip'),
+    conversationTitle: stringValue(value.conversationTitle, t('recoveredClip')),
     conversationUrl: stringValue(value.conversationUrl, ''),
     conversationId: stringValue(value.conversationId, ''),
     messageRole,

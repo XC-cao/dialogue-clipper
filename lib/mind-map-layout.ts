@@ -8,8 +8,9 @@ export interface MindMapLayout {
   edges: Array<{ id: string; source: string; target: string }>;
 }
 
-const ROOT_SIZE = { width: 176, height: 72 };
-const CLIP_SIZE = { width: 224, height: 96 };
+// Keep these in sync with mind-map.css so larger, shared type never overlaps adjacent nodes.
+const ROOT_SIZE = { width: 176, height: 112 };
+const CLIP_SIZE = { width: 224, height: 152 };
 
 export function layoutMindMap(notebook: Notebook, clips: Clip[]): MindMapLayout {
   const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));

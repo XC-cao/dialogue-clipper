@@ -1,6 +1,7 @@
 import type { ExtensionMessage } from './messages';
 
 const RETRY_DELAY_MS = 250;
+const injectionByTab = new Map<number, Promise<void>>();
 
 /**
  * Sends a message to a supported page and repairs the common MV3 case where
@@ -13,7 +14,7 @@ export async function sendContentMessage(
 ): Promise<ExtensionMessage | undefined> {
   let lastError: unknown;
   let injectionAttempted = false;
-  const responseRequired = message.type === 'GET_CONVERSATION_GRAPH' ||
+  const responseRequired = message.type === 'GET_CONVERSATION_GRAPH' || message.type === 'GET_CONVERSATION_EXPORT' ||
     message.type === 'SCROLL_TO_CONVERSATION_NODE' || message.type === 'SCROLL_TO_CLIP';
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
@@ -36,6 +37,18 @@ export async function sendContentMessage(
 }
 
 async function injectRegisteredContentScript(tabId: number): Promise<void> {
+  const activeInjection = injectionByTab.get(tabId);
+  if (activeInjection) return activeInjection;
+  const injection = performContentScriptInjection(tabId);
+  injectionByTab.set(tabId, injection);
+  try {
+    await injection;
+  } finally {
+    if (injectionByTab.get(tabId) === injection) injectionByTab.delete(tabId);
+  }
+}
+
+async function performContentScriptInjection(tabId: number): Promise<void> {
   if (!chrome.scripting?.executeScript) return;
   const scripts = chrome.runtime.getManifest().content_scripts ?? [];
   const files = [...new Set(scripts.flatMap(script => script.js ?? []))];

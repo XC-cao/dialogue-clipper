@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { t } from '../../lib/i18n';
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -15,9 +16,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     if (!this.state.failed) return this.props.children;
     return <main className="panel-fallback">
       <div>!</div>
-      <strong>The sidebar could not be displayed</strong>
-      <p>Your local clips are still safe. Reload the extension first. If the problem continues, check the extension details for errors.</p>
-      <button className="primary" onClick={() => location.reload()}>Reload sidebar</button>
+      <strong>{t('sidebarErrorTitle')}</strong>
+      <p>{t('sidebarErrorBody')}</p>
+      <button className="primary" onClick={() => location.reload()}>{t('reloadSidebar')}</button>
     </main>;
   }
 }

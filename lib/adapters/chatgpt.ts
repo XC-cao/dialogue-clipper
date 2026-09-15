@@ -1,6 +1,7 @@
 import type { SiteAdapter } from './types';
 import { isSupportedConversationUrl } from '../conversation-url';
 import { canonicalUrl, closest, closestReport, pathConversationId, reportId, titleFromPage, uniqueRoots } from './types';
+import { t } from '../i18n';
 
 const MESSAGE = '[data-message-id], [data-testid^="conversation-turn-"]';
 const REPORT = '[data-testid*="report" i], [data-testid*="research" i], [role="dialog"] [role="document"], [role="dialog"] article, main [role="document"]';
@@ -20,7 +21,7 @@ function reportRoot(element: HTMLElement): boolean {
 export const chatgptAdapter: SiteAdapter = {
   platform: 'chatgpt',
   isConversation: () => isSupportedConversationUrl(location.href, 'chatgpt'),
-  metadata: () => ({ platform: 'chatgpt', conversationTitle: titleFromPage('ChatGPT conversation'), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
+  metadata: () => ({ platform: 'chatgpt', conversationTitle: titleFromPage(t('chatgptConversation')), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
   messageRoot,
   messageId: element => reportRoot(element)
     ? reportId(element)

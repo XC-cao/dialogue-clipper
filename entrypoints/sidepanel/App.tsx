@@ -5,7 +5,11 @@ import {
   type Connection, type Edge, type Node, type OnNodeDrag
 } from '@xyflow/react';
 import { markdownFilename, renderMarkdown } from '../../lib/markdown';
-import { validParentOptions } from '../../lib/clip-tree';
+import {
+  conversationExportFilename, isConversationExport, renderConversationExportMarkdown,
+  type ConversationExport
+} from '../../lib/conversation-export';
+import { resolveClipFocus, validParentOptions } from '../../lib/clip-tree';
 import { layoutMindMap, MIND_MAP_ROOT_ID } from '../../lib/mind-map-layout';
 import type { Clip, HighlightColor, Notebook, StoredState } from '../../lib/models';
 import { EMPTY_STATE } from '../../lib/models';
@@ -18,17 +22,24 @@ import type { ExtensionMessage } from '../../lib/messages';
 import {
   clearFocusRequest, downloadTextFile, focusRequestKey, localStorageBytes, readFocusRequest
 } from '../../lib/extension-platform';
-import { isSameConversationUrl } from '../../lib/conversation-url';
+import { isSameConversationUrl, isSupportedConversationUrl } from '../../lib/conversation-url';
 import { ConversationMap } from './ConversationMap';
 import { sendContentMessage } from '../../lib/tab-content';
+import { formatDate, t } from '../../lib/i18n';
 
 const COLORS: HighlightColor[] = ['yellow', 'green', 'blue', 'pink'];
 
 export function App() {
   const [state, setState] = useState<StoredState>(EMPTY_STATE);
   const [view, setView] = useState<'clips' | 'navigation' | 'preview'>('clips');
+  const [markdownSource, setMarkdownSource] = useState<'notebook' | 'conversation'>('notebook');
+  const [conversationExport, setConversationExport] = useState<ConversationExport>();
+  const [conversationExportTabId, setConversationExportTabId] = useState<number>();
+  const [conversationExportLoading, setConversationExportLoading] = useState(false);
+  const [conversationExportError, setConversationExportError] = useState('');
+  const [conversationExportStale, setConversationExportStale] = useState(false);
   const [navigationMode, setNavigationMode] = useState<'conversation' | 'clips'>('conversation');
-  const [focusedClipId, setFocusedClipId] = useState<string>();
+  const [focusedClipIds, setFocusedClipIds] = useState<string[]>([]);
   const [conversationFocusClip, setConversationFocusClip] = useState<Clip>();
   const [conversationTargetTabId, setConversationTargetTabId] = useState<number>();
   const [cardFocusClipId, setCardFocusClipId] = useState<string>();
@@ -42,7 +53,10 @@ export function App() {
   const notebook = state.currentNotebookId ? state.notebooks[state.currentNotebookId] : undefined;
   const notebooks = useMemo(() => Object.values(state.notebooks).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [state.notebooks]);
   const clips = useMemo(() => notebook?.clipIds.map(id => state.clips[id]).filter((clip): clip is Clip => Boolean(clip)) ?? [], [notebook, state.clips]);
-  const markdown = notebook ? renderMarkdown(notebook, clips) : '';
+  const notebookMarkdown = notebook ? renderMarkdown(notebook, clips) : '';
+  const conversationMarkdown = conversationExport ? renderConversationExportMarkdown(conversationExport) : '';
+  const exportSource = view === 'preview' ? markdownSource : 'notebook';
+  const markdown = exportSource === 'conversation' ? conversationMarkdown : notebookMarkdown;
 
   const refresh = async () => {
     setState(await loadState());
@@ -88,6 +102,21 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const activated = ({ tabId }: { tabId: number }) => {
+      if (conversationExportTabId !== undefined && tabId !== conversationExportTabId) setConversationExportStale(true);
+    };
+    const updated = (tabId: number, change: chrome.tabs.OnUpdatedInfo) => {
+      if (conversationExportTabId === tabId && change.url) setConversationExportStale(true);
+    };
+    chrome.tabs.onActivated.addListener(activated);
+    chrome.tabs.onUpdated.addListener(updated);
+    return () => {
+      chrome.tabs.onActivated.removeListener(activated);
+      chrome.tabs.onUpdated.removeListener(updated);
+    };
+  }, [conversationExportTabId]);
+
+  useEffect(() => {
     if (!cardFocusClipId || view !== 'clips' || !clips.some(clip => clip.id === cardFocusClipId)) return;
     const frame = window.requestAnimationFrame(() => {
       const card = document.getElementById(`clip-${cardFocusClipId}`);
@@ -128,11 +157,11 @@ export function App() {
     setUndoDelete(undefined);
     undoTimerRef.current = undefined;
     if (!restored) {
-      notify('Unable to restore this clip because its notebook no longer exists.');
+      notify(t('unableRestoreClip'));
       return;
     }
     await refreshPageHighlights();
-    notify('Clip restored');
+    notify(t('clipRestored'));
   };
 
   const undoLastMove = async () => {
@@ -142,11 +171,11 @@ export function App() {
     setUndoMove(undefined);
     undoTimerRef.current = undefined;
     if (!restored) {
-      notify('Unable to undo this move.');
+      notify(t('unableUndoMove'));
       return;
     }
     await refresh();
-    notify('Move undone');
+    notify(t('moveUndone'));
   };
 
   const chooseNotebook = async (id: string) => {
@@ -155,19 +184,19 @@ export function App() {
   };
 
   const create = async (title: string) => {
-    const notebook = await createNotebook(title || 'Untitled notebook');
+    const notebook = await createNotebook(title || t('untitledNotebook'));
     if (state.pendingCaptures.length) await assignPending(notebook.id);
     setCreating(false);
   };
 
   const removeNotebook = async () => {
-    if (!notebook || !confirm(`Delete “${notebook.title}” and all of its clips? This cannot be undone.`)) return;
+    if (!notebook || !confirm(t('deleteNotebookConfirm', notebook.title))) return;
     await deleteNotebook(notebook.id);
     await refreshPageHighlights();
   };
 
   const removeClip = async (clip: Clip) => {
-    if (!confirm('Delete this clip? Its child nodes will be reconnected to the notebook topic. You can undo for a few seconds.')) return false;
+    if (!confirm(t('deleteClipConfirm'))) return false;
     const snapshot = await deleteClip(clip.id);
     if (!snapshot) return false;
     offerUndo(snapshot, clipLabel(clip));
@@ -180,7 +209,7 @@ export function App() {
     if (!target) return;
     const snapshot = await moveClipToNotebook(clip.id, target.id);
     if (!snapshot) {
-      notify('Unable to move this clip.');
+      notify(t('unableMoveClip'));
       return;
     }
     await refresh();
@@ -198,14 +227,54 @@ export function App() {
     await reorderClips(notebook.id, next);
   };
 
-  const copy = async () => { await navigator.clipboard.writeText(markdown); notify('Markdown copied'); };
+  const loadCurrentConversation = async () => {
+    setConversationExportLoading(true);
+    setConversationExportError('');
+    const tab = (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+    if (tab?.id === undefined || !isSupportedConversationUrl(tab.url)) {
+      setConversationExport(undefined);
+      setConversationExportTabId(undefined);
+      setConversationExportError(t('openConversationFirst'));
+      setConversationExportLoading(false);
+      return;
+    }
+    const response = await sendContentMessage(tab.id, { version: 2, type: 'GET_CONVERSATION_EXPORT' }, 12).catch(() => undefined);
+    if (response?.type !== 'CONVERSATION_EXPORT_RESULT' || !response.ok || !isConversationExport(response.value)) {
+      setConversationExport(undefined);
+      setConversationExportTabId(tab.id);
+      setConversationExportError(t('unableExportConversation'));
+      setConversationExportLoading(false);
+      return;
+    }
+    setConversationExport(response.value);
+    setConversationExportTabId(tab.id);
+    setConversationExportStale(false);
+    setConversationExportLoading(false);
+  };
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(markdown);
+    notify(t(exportSource === 'conversation' ? 'conversationMarkdownCopied' : 'markdownCopied'));
+  };
   const download = async () => {
-    if (!notebook) return;
+    if (exportSource === 'notebook' && !notebook) return;
+    if (exportSource === 'conversation' && !conversationExport) return;
     const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }));
     try {
-      await downloadTextFile(url, markdownFilename(notebook));
-      notify('Markdown download started');
+      const filename = exportSource === 'conversation'
+        ? conversationExportFilename(conversationExport!)
+        : markdownFilename(notebook!);
+      await downloadTextFile(url, filename);
+      notify(t(exportSource === 'conversation' ? 'conversationDownloadStarted' : 'markdownDownloadStarted'));
     } finally { window.setTimeout(() => URL.revokeObjectURL(url), 30_000); }
+  };
+
+  const openMarkdown = () => {
+    setView('preview');
+    if (!notebook) {
+      setMarkdownSource('conversation');
+      if (!conversationExport || conversationExportStale) void loadCurrentConversation();
+    }
   };
 
   const usage = Math.min(100, bytes / 10_485_760 * 100);
@@ -213,20 +282,20 @@ export function App() {
   const showClipsFromConversation = useCallback(async (clipIds: string[]) => {
     const candidates = clipIds.map(id => state.clips[id]).filter((clip): clip is Clip => Boolean(clip));
     if (!candidates.length) return;
-    const inCurrentNotebook = candidates.find(clip => clip.notebookId === notebook?.id);
-    const notebookIds = new Set(candidates.map(clip => clip.notebookId));
-    if (!inCurrentNotebook && notebookIds.size > 1) {
-      notify('This message has clips in multiple notebooks. Select a notebook first.');
+    const focus = resolveClipFocus(candidates, notebook?.id);
+    if (focus.ambiguous) {
+      notify(t('multipleNotebooksNotice'));
       return;
     }
-    const target = inCurrentNotebook ?? candidates[0]!;
-    if (target.notebookId !== notebook?.id) {
-      await selectNotebook(target.notebookId);
+    const targets = focus.clips;
+    const targetNotebookId = targets[0]!.notebookId;
+    if (targetNotebookId !== notebook?.id) {
+      await selectNotebook(targetNotebookId);
       await refresh();
-    } else if (notebookIds.size > 1) {
-      notify('Showing clips from this notebook. This message also has clips elsewhere.');
+    } else if (focus.omittedOtherNotebooks) {
+      notify(t('showingClipsNotice'));
     }
-    setFocusedClipId(target.id);
+    setFocusedClipIds(targets.map(clip => clip.id));
     setNavigationMode('clips');
     setView('navigation');
   }, [notebook?.id, state.clips]);
@@ -241,64 +310,87 @@ export function App() {
     });
   }, []);
 
-  const clearClipMapFocus = useCallback(() => setFocusedClipId(undefined), []);
+  const showClipInMap = useCallback((clipId: string) => {
+    setFocusedClipIds([clipId]);
+    setNavigationMode('clips');
+    setView('navigation');
+  }, []);
+
+  const clearClipMapFocus = useCallback(() => setFocusedClipIds([]), []);
   const clearConversationFocus = useCallback(() => {
     setConversationFocusClip(undefined);
     setConversationTargetTabId(undefined);
   }, []);
 
-  return <main>
+  return <main className={view === 'navigation' ? 'navigation-page' : undefined}>
     <header className="app-header">
-      <div><div className="eyebrow">LOCAL-FIRST</div><h1>Dialogue Clipper</h1></div>
-      <button className="icon-button" title="New notebook" aria-label="New notebook" onClick={() => setCreating(true)}>＋</button>
+      <div><div className="eyebrow">{t('localFirst')}</div><h1>{t('extName')}</h1></div>
+      {!notebook && <button className="icon-button" title={t('newNotebook')} aria-label={t('newNotebook')} onClick={() => setCreating(true)}>＋</button>}
     </header>
 
     {state.pendingCaptures.length > 0 && <section className="pending">
-      <strong>{state.pendingCaptures.length} {state.pendingCaptures.length === 1 ? 'clip is' : 'clips are'} waiting to be saved</strong>
-      <span>Create or select a notebook to file them.</span>
+      <strong>{t(state.pendingCaptures.length === 1 ? 'pendingClipsOne' : 'pendingClipsOther', String(state.pendingCaptures.length))}</strong>
+      <span>{t('pendingHint')}</span>
     </section>}
 
     {(creating || Object.keys(state.notebooks).length === 0) && <CreateNotebook onCreate={create} canCancel={Object.keys(state.notebooks).length > 0} onCancel={() => setCreating(false)} />}
 
-    {Object.keys(state.notebooks).length > 0 && <>
-      <label className="field-label" htmlFor="notebook-select">Current notebook</label>
-      <div className="notebook-row">
-        <select id="notebook-select" value={notebook?.id ?? ''} onChange={event => void chooseNotebook(event.target.value)}>
-          {notebooks.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
-        </select>
-        <button className="danger-ghost" title="Delete notebook" onClick={() => void removeNotebook()}>Delete</button>
-      </div>
-    </>}
-
-    {notebook && <NotebookEditor notebook={notebook} />}
+    {notebook && <NotebookEditor notebook={notebook} notebooks={notebooks} onSwitch={chooseNotebook} onCreate={() => setCreating(true)} onDelete={() => void removeNotebook()} />}
     <nav className="tabs">
-      <button className={view === 'clips' ? 'active' : ''} disabled={!notebook} onClick={() => setView('clips')}>Clips {notebook && <span>{clips.length}</span>}</button>
-      <button className={view === 'navigation' ? 'active' : ''} onClick={() => setView('navigation')}>Navigate</button>
-      <button className={view === 'preview' ? 'active' : ''} disabled={!notebook} onClick={() => setView('preview')}>Markdown</button>
+      <button className={view === 'clips' ? 'active' : ''} disabled={!notebook} onClick={() => setView('clips')}>{t('clips')} {notebook && <span>{clips.length}</span>}</button>
+      <button className={view === 'navigation' ? 'active' : ''} onClick={() => setView('navigation')}>{t('navigate')}</button>
+      <button className={view === 'preview' ? 'active' : ''} onClick={openMarkdown}>{t('markdown')}</button>
     </nav>
 
     {view === 'clips' && notebook && <section className="clip-list">
         {clips.length === 0 && <EmptyState />}
-        {clips.map(clip => <ClipCard key={clip.id} clip={clip} clips={clips} notebooks={notebooks} draggable onDragStart={() => setDraggedId(clip.id)} onDragOver={event => event.preventDefault()} onDrop={() => void dropOn(clip.id)} onMove={targetNotebookId => void moveClip(clip, targetNotebookId)} onDelete={() => void removeClip(clip)} onChanged={() => void refreshPageHighlights()} />)}
+        {clips.map(clip => <ClipCard key={clip.id} clip={clip} clips={clips} notebooks={notebooks} draggable onDragStart={() => setDraggedId(clip.id)} onDragOver={event => event.preventDefault()} onDrop={() => void dropOn(clip.id)} onMove={targetNotebookId => void moveClip(clip, targetNotebookId)} onDelete={() => void removeClip(clip)} onChanged={() => void refreshPageHighlights()} onShowInMap={() => showClipInMap(clip.id)} />)}
     </section>}
-    {view === 'navigation' && <section className="navigation-workspace">
-      <div className="navigation-switch" role="group" aria-label="Navigation type">
-        <button className={navigationMode === 'conversation' ? 'active' : ''} onClick={() => setNavigationMode('conversation')}>Conversation map</button>
-        <button disabled={!notebook} className={navigationMode === 'clips' ? 'active' : ''} onClick={() => setNavigationMode('clips')}>Clip map {notebook && <span>{clips.length}</span>}</button>
+    <section className="navigation-workspace" hidden={view !== 'navigation'}>
+      <div className="navigation-switch" role="group" aria-label={t('navigationType')}>
+        <button className={navigationMode === 'conversation' ? 'active' : ''} onClick={() => setNavigationMode('conversation')}>{t('conversationMap')}</button>
+        <button disabled={!notebook} className={navigationMode === 'clips' ? 'active' : ''} onClick={() => setNavigationMode('clips')}>{t('clipMap')} {notebook && <span>{clips.length}</span>}</button>
       </div>
-      {navigationMode === 'conversation'
-        ? <ConversationMap onShowClips={showClipsFromConversation} focusClip={conversationFocusClip} targetTabId={conversationTargetTabId} onFocusHandled={clearConversationFocus} />
-        : notebook ? <MindMap notebook={notebook} clips={clips} focusedClipId={focusedClipId} onFocusHandled={clearClipMapFocus} onShowConversation={showConversationFromClip} onDelete={removeClip} /> : <EmptyState />}
+      <div hidden={navigationMode !== 'conversation'}>
+        <ConversationMap active={view === 'navigation' && navigationMode === 'conversation'} clipsById={state.clips} onShowClips={showClipsFromConversation} focusClip={conversationFocusClip} targetTabId={conversationTargetTabId} onFocusHandled={clearConversationFocus} />
+      </div>
+      {view === 'navigation' && navigationMode === 'clips' && (notebook ? <MindMap notebook={notebook} clips={clips} focusedClipIds={focusedClipIds} onFocusHandled={clearClipMapFocus} onShowConversation={showConversationFromClip} onDelete={removeClip} /> : <EmptyState />)}
+    </section>
+    {view === 'preview' && <section className="preview">
+      <div className="markdown-source-switch" role="group" aria-label={t('markdownContent')}>
+        <button disabled={!notebook} className={markdownSource === 'notebook' ? 'active' : ''} onClick={() => setMarkdownSource('notebook')}>{t('clipNotebook')}</button>
+        <button className={markdownSource === 'conversation' ? 'active' : ''} onClick={() => {
+          setMarkdownSource('conversation');
+          if (!conversationExport || conversationExportStale) void loadCurrentConversation();
+        }}>{t('currentConversation')}</button>
+      </div>
+      {markdownSource === 'notebook' && notebook && <pre>{notebookMarkdown}</pre>}
+      {markdownSource === 'conversation' && <div className="conversation-export-preview">
+        <div className="conversation-export-head">
+          <div>
+            <strong>{conversationExport?.conversationTitle ?? t('currentConversation')}</strong>
+            {conversationExport && <span>{conversationExport.platform.toUpperCase()} · {t('messageOther', String(conversationExport.messages.length))}</span>}
+          </div>
+          <button onClick={() => void loadCurrentConversation()} disabled={conversationExportLoading}>{t(conversationExport ? 'reread' : 'readConversation')}</button>
+        </div>
+        {conversationExportStale && <p className="conversation-export-warning">{t('conversationTabChanged')}</p>}
+        {conversationExportLoading && <div className="conversation-export-state">{t('readingFullConversation')}</div>}
+        {!conversationExportLoading && conversationExportError && <div className="conversation-export-state error">{conversationExportError}</div>}
+        {!conversationExportLoading && !conversationExportError && conversationExport && <>
+          <p className="conversation-export-scope">{t('conversationExportScopeStatus', String(conversationExport.messages.length))}</p>
+          <pre>{conversationMarkdown}</pre>
+        </>}
+        {!conversationExportLoading && !conversationExportError && !conversationExport && <div className="conversation-export-state">{t('readConversationHint')}</div>}
+      </div>}
     </section>}
-    {view === 'preview' && notebook && <section className="preview"><pre>{markdown}</pre></section>}
 
-    {notebook && <footer className="export-bar">
-        <div className="storage" title={`${Math.round(bytes / 1024)} KB / 10 MB`}><i style={{ width: `${usage}%` }} /></div>
-        {usage >= 80 && <p className="warning">Local storage is almost full. Export your notes, then remove old data.</p>}
-        <div className="export-actions"><button onClick={() => void copy()} disabled={!clips.length}>Copy Markdown</button><button className="primary" onClick={() => void download()} disabled={!clips.length}>Download .md</button></div>
+    {view !== 'navigation' && (notebook || (view === 'preview' && markdownSource === 'conversation')) && <footer className="export-bar">
+        {notebook && <div className="storage" title={`${Math.round(bytes / 1024)} KB / 10 MB`}><i style={{ width: `${usage}%` }} /></div>}
+        {notebook && usage >= 80 && <p className="warning">{t('storageAlmostFull')}</p>}
+        <div className="export-actions"><button onClick={() => void copy()} disabled={exportSource === 'conversation' ? !conversationExport || conversationExportStale || conversationExportLoading : !clips.length}>{t(exportSource === 'conversation' ? 'copyFullConversation' : 'copyMarkdown')}</button><button className="primary" onClick={() => void download()} disabled={exportSource === 'conversation' ? !conversationExport || conversationExportStale || conversationExportLoading : !clips.length}>{t(exportSource === 'conversation' ? 'downloadFullConversation' : 'downloadMarkdown')}</button></div>
     </footer>}
-    {undoDelete && <div className="notice undo-notice" role="region" aria-label="Deletion status" aria-live="polite"><span>Deleted “{undoDelete.label}”</span><button autoFocus onClick={() => void undoLastDelete()}>Undo</button></div>}
-    {undoMove && <div className="notice undo-notice" role="region" aria-label="Move status" aria-live="polite"><span>Moved to “{undoMove.targetTitle}”</span><button onClick={() => void undoLastMove()}>Undo</button></div>}
+    {undoDelete && <div className="notice undo-notice" role="region" aria-label={t('delete')} aria-live="polite"><span>{t('deletedClip', undoDelete.label)}</span><button autoFocus onClick={() => void undoLastDelete()}>{t('undo')}</button></div>}
+    {undoMove && <div className="notice undo-notice" role="region" aria-label={t('move')} aria-live="polite"><span>{t('movedTo', undoMove.targetTitle)}</span><button onClick={() => void undoLastMove()}>{t('undo')}</button></div>}
     {!undoDelete && !undoMove && notice && <div className="notice" role="status" aria-live="polite">{notice}</div>}
   </main>;
 }
@@ -306,40 +398,81 @@ export function App() {
 function CreateNotebook({ onCreate, canCancel, onCancel }: { onCreate: (title: string) => void; canCancel: boolean; onCancel: () => void }) {
   const [title, setTitle] = useState('');
   return <form className="create-card" onSubmit={event => { event.preventDefault(); void onCreate(title.trim()); }}>
-    <strong>Create a topic notebook</strong><p>New clips will be added here automatically.</p>
-    <input autoFocus value={title} maxLength={80} placeholder="For example: Product design methods" onChange={event => setTitle(event.target.value)} />
-    <div><button className="primary" type="submit">Create</button>{canCancel && <button type="button" onClick={onCancel}>Cancel</button>}</div>
+    <strong>{t('createTopicNotebook')}</strong><p>{t('newClipsAddedHere')}</p>
+    <input autoFocus value={title} maxLength={80} placeholder={t('notebookTitlePlaceholder')} onChange={event => setTitle(event.target.value)} />
+    <div><button className="primary" type="submit">{t('create')}</button>{canCancel && <button type="button" onClick={onCancel}>{t('cancel')}</button>}</div>
   </form>;
 }
 
-function NotebookEditor({ notebook }: { notebook: Notebook }) {
+function NotebookEditor({ notebook, notebooks, onSwitch, onCreate, onDelete }: { notebook: Notebook; notebooks: Notebook[]; onSwitch: (id: string) => Promise<void>; onCreate: () => void; onDelete: () => void }) {
   const [title, setTitle] = useState(notebook.title);
   const [description, setDescription] = useState(notebook.description);
   useEffect(() => { setTitle(notebook.title); setDescription(notebook.description); }, [notebook.id, notebook.title, notebook.description]);
   const save = () => { if (title.trim()) void updateNotebook(notebook.id, { title, description }); };
   return <section className="notebook-editor">
-    <input className="title-input" value={title} maxLength={80} onChange={event => setTitle(event.target.value)} onBlur={save} />
-    <textarea value={description} maxLength={500} placeholder="Add a short description (optional)" onChange={event => setDescription(event.target.value)} onBlur={save} />
+    <div className="notebook-heading">
+      <div className="notebook-title-group">
+        <input id="notebook-title" className="title-input" aria-label={t('notebookTitle')} value={title} maxLength={80} onChange={event => setTitle(event.target.value)} onBlur={save} />
+        <select className="notebook-switcher" aria-label={t('switchNotebook')} title={t('switchNotebook')} value="" onChange={event => { const id = event.target.value; if (id) void onSwitch(id); }}>
+          <option value=""> </option>
+          {notebooks.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select>
+      </div>
+      <div className="notebook-actions">
+        <button className="notebook-action" title={t('newNotebook')} aria-label={t('newNotebook')} onClick={onCreate}>＋</button>
+        <details className="notebook-menu">
+          <summary title={t('notebookActions')} aria-label={t('notebookActions')}>•••</summary>
+          <div className="notebook-menu-popover" role="menu">
+            <button className="danger-ghost" role="menuitem" onClick={onDelete}>{t('deleteNotebook')}</button>
+          </div>
+        </details>
+      </div>
+    </div>
+    <textarea value={description} maxLength={500} placeholder={t('notebookDescriptionPlaceholder')} onChange={event => setDescription(event.target.value)} onBlur={save} />
   </section>;
 }
 
-function ClipCard({ clip, clips, notebooks, onMove, onDelete, onChanged, ...dragProps }: { clip: Clip; clips: Clip[]; notebooks: Notebook[]; onMove: (notebookId: string) => void; onDelete: () => void; onChanged: () => void } & React.HTMLAttributes<HTMLElement>) {
+function ClipCard({ clip, clips, notebooks, onMove, onDelete, onChanged, onShowInMap, ...dragProps }: { clip: Clip; clips: Clip[]; notebooks: Notebook[]; onMove: (notebookId: string) => void; onDelete: () => void; onChanged: () => void; onShowInMap: () => void } & React.HTMLAttributes<HTMLElement>) {
   const [annotation, setAnnotation] = useState(clip.annotation);
+  const [editingAnnotation, setEditingAnnotation] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
+  const annotationEditorRef = useRef<HTMLTextAreaElement>(null);
+  const annotationTriggerRef = useRef<HTMLButtonElement>(null);
+  const skipAnnotationSaveRef = useRef(false);
+  const parent = clip.parentClipId ? clips.find(item => item.id === clip.parentClipId) : undefined;
   useEffect(() => setAnnotation(clip.annotation), [clip.annotation]);
+  useEffect(() => { if (editingAnnotation) annotationEditorRef.current?.focus(); }, [editingAnnotation]);
   const openSource = () => openClipSource(clip);
+  const saveAnnotation = () => {
+    if (skipAnnotationSaveRef.current) return;
+    setEditingAnnotation(false);
+    void updateClip(clip.id, { annotation });
+  };
+  const cancelAnnotationEdit = () => {
+    skipAnnotationSaveRef.current = true;
+    setAnnotation(clip.annotation);
+    setEditingAnnotation(false);
+    window.requestAnimationFrame(() => {
+      skipAnnotationSaveRef.current = false;
+      annotationTriggerRef.current?.focus();
+    });
+  };
   const activateCard = (event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) => {
     if (event.target instanceof Element && event.target.closest('button, textarea, input, select, a, [contenteditable="true"]')) return;
     if ('key' in event && event.key !== 'Enter' && event.key !== ' ') return;
     if ('key' in event) event.preventDefault();
     void openSource();
   };
-  return <article ref={cardRef} id={`clip-${clip.id}`} className="clip-card" role="button" tabIndex={0} title="Open the source message" onClick={activateCard} onKeyDown={activateCard} {...dragProps}>
-    <div className="clip-meta"><span className={`platform ${clip.platform}`}>{clip.platform}</span><span>{clip.messageRole === 'assistant' ? 'AI' : clip.messageRole === 'user' ? 'You' : 'Unknown role'}</span><span>{new Date(clip.capturedAt).toLocaleDateString('en-US')}</span><span className={clip.anchor.status === 'unresolved' ? 'unresolved' : 'resolved'}>{clip.anchor.status === 'unresolved' ? 'Source not found' : 'Source found'}</span><span className="drag">⠿</span></div>
+  return <article ref={cardRef} id={`clip-${clip.id}`} className="clip-card" role="button" tabIndex={0} title={t('openSourceMessage')} onClick={activateCard} onKeyDown={activateCard} {...dragProps}>
+    <div className="clip-meta"><span className={`platform ${clip.platform}`}>{clip.platform}</span><span>{roleLabel(clip.messageRole)}</span><span>{formatDate(clip.capturedAt)}</span><span className={clip.anchor.status === 'unresolved' ? 'unresolved' : 'resolved'}>{clip.anchor.status === 'unresolved' ? t('sourceNotFound') : t('sourceFound')}</span><span className="drag" aria-hidden="true">⠿</span></div>
     <blockquote>{clip.originalText}</blockquote>
-    <textarea value={annotation} maxLength={2000} placeholder="Add your annotation…" onChange={event => setAnnotation(event.target.value)} onBlur={() => void updateClip(clip.id, { annotation })} />
-    <label className="parent-picker"><span>Connect to</span><select value={clip.parentClipId ?? ''} onChange={event => void setClipParent(clip.id, event.target.value || undefined)}><option value="">Notebook topic (root)</option>{validParentOptions(clip, clips).map(item => <option key={item.id} value={item.id}>{clipLabel(item)}</option>)}</select></label>
-    <div className="card-actions"><div className="colors">{COLORS.map(color => <button key={color} aria-label={`${color} highlight`} className={clip.highlightColor === color ? 'selected' : ''} data-color={color} onClick={() => { void updateClip(clip.id, { highlightColor: color }).then(onChanged); }} />)}</div>{notebooks.length > 1 && <MoveClipMenu clip={clip} clips={clips} notebooks={notebooks} onMove={onMove} />}<button onClick={() => void openSource()}>Source ↗</button><button className="danger-ghost" onClick={onDelete}>Remove</button></div>
+    {editingAnnotation
+      ? <textarea ref={annotationEditorRef} className="annotation-editor" value={annotation} maxLength={2000} placeholder={t('annotationPlaceholder')} aria-label={t('yourAnnotation')} onChange={event => setAnnotation(event.target.value)} onBlur={saveAnnotation} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelAnnotationEdit(); } }} />
+      : annotation.trim()
+        ? <button ref={annotationTriggerRef} type="button" className="annotation-preview" aria-label={`${t('editAnnotation')}: ${annotation}`} onClick={() => setEditingAnnotation(true)}><span>{t('myAnnotation')}</span><strong>{annotation}</strong></button>
+        : <button ref={annotationTriggerRef} type="button" className="annotation-add" onClick={() => setEditingAnnotation(true)}>＋ {t('addAnnotation')}</button>}
+    {parent && <button type="button" className="connection-status" title={t('clipMap')} onClick={onShowInMap}><span>{t('under')}</span><strong>{clipLabel(parent, 38)}</strong><i aria-hidden="true">→</i></button>}
+    <div className="card-actions"><div className="colors">{COLORS.map(color => <button key={color} aria-label={t('highlightColor', colorLabel(color))} className={clip.highlightColor === color ? 'selected' : ''} data-color={color} onClick={() => { void updateClip(clip.id, { highlightColor: color }).then(onChanged); }} />)}</div>{notebooks.length > 1 && <MoveClipMenu clip={clip} clips={clips} notebooks={notebooks} onMove={onMove} />}<button onClick={() => void openSource()}>{t('source')}</button><button className="danger-ghost" onClick={onDelete}>{t('remove')}</button></div>
   </article>;
 }
 
@@ -378,15 +511,15 @@ function MoveClipMenu({ clip, clips, notebooks, onMove }: { clip: Clip; clips: C
   };
 
   return <div className="move-menu" ref={rootRef}>
-    <button ref={buttonRef} type="button" className="move-trigger" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={() => { setQuery(''); setOpen(value => !value); }}>Move…</button>
-    {open && <div className="move-popover" id={menuId} role="menu" aria-label="Move clip to another notebook">
-      <div className="move-popover-header"><strong>Move clip to</strong><span>{targets.length} {targets.length === 1 ? 'notebook' : 'notebooks'}</span></div>
-      {targets.length > 6 && <input autoFocus type="search" value={query} placeholder="Find a notebook…" aria-label="Find a notebook" onChange={event => setQuery(event.target.value)} />}
+    <button ref={buttonRef} type="button" className="move-trigger" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={() => { setQuery(''); setOpen(value => !value); }}>{t('move')}</button>
+    {open && <div className="move-popover" id={menuId} role="menu" aria-label={t('moveClipTo')}>
+      <div className="move-popover-header"><strong>{t('moveClipTo')}</strong><span>{targets.length === 1 ? t('notebookOne', String(targets.length)) : t('notebookOther', String(targets.length))}</span></div>
+      {targets.length > 6 && <input autoFocus type="search" value={query} placeholder={t('findNotebook')} aria-label={t('findNotebookLabel')} onChange={event => setQuery(event.target.value)} />}
       <div className="move-targets">
         {filteredTargets.map((item, index) => <button autoFocus={targets.length <= 6 && index === 0} type="button" role="menuitem" key={item.id} onClick={() => chooseTarget(item.id)}><span>{item.title}</span><small>{item.clipIds.length}</small></button>)}
-        {!filteredTargets.length && <p>No matching notebooks</p>}
+        {!filteredTargets.length && <p>{t('noMatchingNotebooks')}</p>}
       </div>
-      {hasConnections && <p className="move-warning">Moving will reset its mind-map connections.</p>}
+      {hasConnections && <p className="move-warning">{t('moveWarning')}</p>}
     </div>}
   </div>;
 }
@@ -394,9 +527,10 @@ function MoveClipMenu({ clip, clips, notebooks, onMove }: { clip: Clip; clips: C
 type MapNodeData = { label: React.ReactNode; color: string; clip?: Clip };
 type MapNode = Node<MapNodeData>;
 
-function MindMap({ notebook, clips, focusedClipId, onFocusHandled, onShowConversation, onDelete }: { notebook: Notebook; clips: Clip[]; focusedClipId?: string; onFocusHandled: () => void; onShowConversation: (clip: Clip) => void; onDelete: (clip: Clip) => Promise<boolean> }) {
-  const [selectedClipId, setSelectedClipId] = useState(focusedClipId);
-  const [detailOpen, setDetailOpen] = useState(Boolean(focusedClipId));
+function MindMap({ notebook, clips, focusedClipIds, onFocusHandled, onShowConversation, onDelete }: { notebook: Notebook; clips: Clip[]; focusedClipIds: string[]; onFocusHandled: () => void; onShowConversation: (clip: Clip) => void; onDelete: (clip: Clip) => Promise<boolean> }) {
+  const [selectedClipId, setSelectedClipId] = useState(focusedClipIds.length === 1 ? focusedClipIds[0] : undefined);
+  const [highlightedClipIds, setHighlightedClipIds] = useState(focusedClipIds);
+  const [detailOpen, setDetailOpen] = useState(focusedClipIds.length === 1);
   const createGraph = useCallback((preferSavedPositions = true) => {
     const layout = layoutMindMap(notebook, clips);
     const positions = preferSavedPositions ? { ...layout.positions, ...notebook.mindMapPositions } : layout.positions;
@@ -405,7 +539,7 @@ function MindMap({ notebook, clips, focusedClipId, onFocusHandled, onShowConvers
         id: MIND_MAP_ROOT_ID,
         type: 'input',
         position: positions[MIND_MAP_ROOT_ID]!,
-        data: { color: 'root', label: <><strong>{notebook.title}</strong><small>{clips.length} {clips.length === 1 ? 'clip' : 'clips'}</small></> },
+        data: { color: 'root', label: <><strong>{notebook.title}</strong><small>{clips.length === 1 ? t('clipCountOne', String(clips.length)) : t('clipCountOther', String(clips.length))}</small></> },
         sourcePosition: Position.Right,
         draggable: true,
         deletable: false,
@@ -424,7 +558,7 @@ function MindMap({ notebook, clips, focusedClipId, onFocusHandled, onShowConvers
         targetPosition: Position.Left,
         draggable: true,
         deletable: false,
-        className: `flow-node flow-clip color-${clip.highlightColor}${clip.id === selectedClipId ? ' flow-focus' : ''}`
+        className: `flow-node flow-clip color-${clip.highlightColor}${clip.id === selectedClipId || highlightedClipIds.includes(clip.id) ? ' flow-focus' : ''}`
       }))
     ];
     const graphEdges: Edge[] = layout.edges.map(edge => ({
@@ -434,7 +568,7 @@ function MindMap({ notebook, clips, focusedClipId, onFocusHandled, onShowConvers
       style: { strokeWidth: 1.8 }
     }));
     return { graphNodes, graphEdges };
-  }, [notebook, clips, selectedClipId]);
+  }, [notebook, clips, highlightedClipIds, selectedClipId]);
 
   const initial = useMemo(() => createGraph(), [createGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>(initial.graphNodes);
@@ -448,20 +582,24 @@ function MindMap({ notebook, clips, focusedClipId, onFocusHandled, onShowConvers
   }, [createGraph, setEdges, setNodes]);
 
   useEffect(() => {
-    if (!focusedClipId) return;
-    setSelectedClipId(focusedClipId);
-    setDetailOpen(true);
-    const target = nodes.find(node => node.id === focusedClipId);
-    if (!target || !instance) return;
-    window.setTimeout(() => void instance.fitView({ nodes: [target], padding: 1.4, maxZoom: 1.15, duration: 300 }), 20);
+    if (!focusedClipIds.length) return;
+    const requestedIds = focusedClipIds.filter(id => clips.some(clip => clip.id === id));
+    const targets = nodes.filter(node => requestedIds.includes(node.id));
+    if (!requestedIds.length || !instance || targets.length !== requestedIds.length) return;
+    const singleId = requestedIds.length === 1 ? requestedIds[0] : undefined;
+    setHighlightedClipIds(requestedIds);
+    setSelectedClipId(singleId);
+    setDetailOpen(Boolean(singleId));
+    window.setTimeout(() => void instance.fitView({ nodes: targets, padding: 1.1, maxZoom: 1.15, duration: 300 }), 20);
     onFocusHandled();
-  }, [focusedClipId, instance, nodes, onFocusHandled]);
+  }, [clips, focusedClipIds, instance, nodes, onFocusHandled]);
 
   useEffect(() => {
     if (selectedClipId && !clips.some(clip => clip.id === selectedClipId)) {
       setSelectedClipId(undefined);
       setDetailOpen(false);
     }
+    setHighlightedClipIds(current => current.filter(id => clips.some(clip => clip.id === id)));
   }, [clips, selectedClipId]);
 
   const selectedClip = clips.find(clip => clip.id === selectedClipId);
@@ -509,13 +647,15 @@ function MindMap({ notebook, clips, focusedClipId, onFocusHandled, onShowConvers
   };
 
   if (!clips.length) return <EmptyState />;
-  return <section className="mind-map" aria-label="Clip mind map" onKeyDown={handleMapKeyDown}>
+  return <section className="mind-map" aria-label={t('clipMindMap')} onKeyDown={handleMapKeyDown}>
+    <header className="navigation-view-head">
+      <div><h2>{notebook.title}</h2><p>{t(clips.length === 1 ? 'clipCountOne' : 'clipCountOther', String(clips.length))} · {t('freeformCanvas')}</p></div>
+    </header>
     <div className="map-toolbar">
-      <div><strong>Freeform canvas</strong><span>Drag nodes or the empty canvas</span></div>
-      <button disabled={!selectedClipId} title="Open this clip's source conversation and focus its message in the conversation map" onClick={() => { const clip = clips.find(item => item.id === selectedClipId); if (clip) onShowConversation(clip); }}>In conversation</button>
-      <button className="map-delete" disabled={!selectedClipId} title="Delete selected clip (Delete or Backspace)" onClick={() => void removeSelected()}>Delete</button>
-      <button onClick={arrange}>Auto-arrange</button>
-      <button onClick={() => void instance?.fitView({ padding: .22, duration: 350 })}>Fit view</button>
+      <button disabled={!selectedClipId} title={t('openSourceMessage')} onClick={() => { const clip = clips.find(item => item.id === selectedClipId); if (clip) onShowConversation(clip); }}>{t('inConversation')}</button>
+      <button className="map-delete" disabled={!selectedClipId} title={t('deleteSelectedClip')} onClick={() => void removeSelected()}>{t('delete')}</button>
+      <button onClick={arrange}>{t('autoArrange')}</button>
+      <button onClick={() => void instance?.fitView({ padding: .22, duration: 350 })}>{t('fitView')}</button>
     </div>
     <div className={`map-canvas${detailOpen && selectedClip ? ' detail-is-open' : ''}`}>
       <ReactFlow<MapNode, Edge>
@@ -526,10 +666,11 @@ function MindMap({ notebook, clips, focusedClipId, onFocusHandled, onShowConvers
         onEdgesChange={onEdgesChange}
         onNodeDragStop={savePosition}
         onNodeClick={(_event, node) => {
+          setHighlightedClipIds(node.data.clip ? [node.data.clip.id] : []);
           setSelectedClipId(node.data.clip?.id);
           setDetailOpen(Boolean(node.data.clip));
         }}
-        onPaneClick={() => { setSelectedClipId(undefined); setDetailOpen(false); }}
+        onPaneClick={() => { setHighlightedClipIds([]); setSelectedClipId(undefined); setDetailOpen(false); }}
         onNodeDoubleClick={(_event, node) => { if (node.data.clip) void openClipSource(node.data.clip); }}
         onConnect={connect}
         connectionLineType={ConnectionLineType.SmoothStep}
@@ -548,29 +689,35 @@ function MindMap({ notebook, clips, focusedClipId, onFocusHandled, onShowConvers
         <MiniMap pannable zoomable nodeColor={node => node.id === MIND_MAP_ROOT_ID ? '#eb6c36' : mapNodeColor(String(node.data.color))} />
         <Controls showInteractive={false} />
       </ReactFlow>
-      <aside className={`map-detail${detailOpen && selectedClip ? ' open' : ''}`} aria-hidden={!detailOpen || !selectedClip} aria-label="Full clip details" inert={!detailOpen || !selectedClip}>
-        {selectedClip && <MindMapDetail clip={selectedClip} onClose={() => setDetailOpen(false)} onShowConversation={() => onShowConversation(selectedClip)} />}
+      <aside className={`map-detail${detailOpen && selectedClip ? ' open' : ''}`} aria-hidden={!detailOpen || !selectedClip} aria-label={t('fullClip')} inert={!detailOpen || !selectedClip}>
+        {selectedClip && <MindMapDetail clip={selectedClip} clips={clips} onClose={() => setDetailOpen(false)} onShowConversation={() => onShowConversation(selectedClip)} />}
       </aside>
     </div>
-    <p className="map-help">Click a clip to read its full text and edit its annotation. “In conversation” opens the source conversation and focuses the containing message in the conversation map. Double-click a clip to jump directly to its source text.</p>
+    <p className="map-help">{t('dragNodes')} · {t('clipMapHelp')}</p>
   </section>;
 }
 
-function MindMapDetail({ clip, onClose, onShowConversation }: { clip: Clip; onClose: () => void; onShowConversation: () => void }) {
+function MindMapDetail({ clip, clips, onClose, onShowConversation }: { clip: Clip; clips: Clip[]; onClose: () => void; onShowConversation: () => void }) {
   const [annotation, setAnnotation] = useState(clip.annotation);
+  const parent = clip.parentClipId ? clips.find(item => item.id === clip.parentClipId) : undefined;
   useEffect(() => setAnnotation(clip.annotation), [clip.id, clip.annotation]);
   return <div className="map-detail-content">
     <header>
-      <div><span className={`platform ${clip.platform}`}>{clip.platform}</span><strong>Full clip</strong></div>
-      <button className="map-detail-close" aria-label="Close full clip" title="Close (Escape)" onClick={onClose}>×</button>
+      <div><span className={`platform ${clip.platform}`}>{clip.platform}</span><strong>{t('fullClip')}</strong></div>
+      <button className="map-detail-close" aria-label={t('closeFullClip')} title={t('closeEscape')} onClick={onClose}>×</button>
     </header>
-    <div className="map-detail-meta"><span>{clip.messageRole === 'assistant' ? 'AI' : clip.messageRole === 'user' ? 'You' : 'Unknown role'}</span><span>{new Date(clip.capturedAt).toLocaleDateString('en-US')}</span></div>
+    <div className="map-detail-meta"><span>{roleLabel(clip.messageRole)}</span><span>{formatDate(clip.capturedAt)}</span></div>
     <section className="map-detail-original" aria-labelledby={`full-clip-${clip.id}`}>
-      <div><strong id={`full-clip-${clip.id}`}>Original excerpt</strong><span>Read-only</span></div>
+      <div><strong id={`full-clip-${clip.id}`}>{t('originalExcerpt')}</strong><span>{t('readOnly')}</span></div>
       <blockquote>{clip.originalText}</blockquote>
     </section>
-    <label className="map-detail-annotation"><span>Your annotation</span><textarea value={annotation} maxLength={2000} placeholder="Add your annotation…" onChange={event => setAnnotation(event.target.value)} onBlur={() => void updateClip(clip.id, { annotation })} /></label>
-    <footer><button onClick={() => void openClipSource(clip)}>Source ↗</button><button className="primary" title="Open this clip's source conversation and focus its message in the conversation map" onClick={onShowConversation}>In conversation</button></footer>
+    <label className="map-detail-annotation"><span>{t('yourAnnotation')}</span><textarea value={annotation} maxLength={2000} placeholder={t('annotationPlaceholder')} onChange={event => setAnnotation(event.target.value)} onBlur={() => void updateClip(clip.id, { annotation })} /></label>
+    <details className="map-detail-connection">
+      <summary><strong>{t('connection')}</strong><span>{parent ? clipLabel(parent, 28) : t('notebookTopicRoot')}</span></summary>
+      <label><span>{t('changeParent')}</span><select value={clip.parentClipId ?? ''} onChange={event => void setClipParent(clip.id, event.target.value || undefined)}><option value="">{t('notebookTopicRoot')}</option>{validParentOptions(clip, clips).map(item => <option key={item.id} value={item.id}>{clipLabel(item)}</option>)}</select></label>
+      {clip.parentClipId && <button type="button" onClick={() => void setClipParent(clip.id, undefined)}>{t('moveToNotebookRoot')}</button>}
+    </details>
+    <footer><button onClick={() => void openClipSource(clip)}>{t('source')}</button><button className="primary" title={t('openSourceMessage')} onClick={onShowConversation}>{t('inConversation')}</button></footer>
   </div>;
 }
 
@@ -581,6 +728,14 @@ function mapNodeColor(color: string): string {
 function clipLabel(clip: Clip, maxLength = 48): string {
   const text = clip.originalText.replace(/\s+/g, ' ').trim();
   return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+}
+
+function roleLabel(role: Clip['messageRole']): string {
+  return role === 'assistant' ? t('roleAi') : role === 'user' ? t('roleYou') : t('unknownRole');
+}
+
+function colorLabel(color: HighlightColor): string {
+  return t(`color${color[0]!.toUpperCase()}${color.slice(1)}`);
 }
 
 async function openClipSource(clip: Clip): Promise<number | undefined> {
@@ -618,7 +773,7 @@ async function sendScrollRequest(tabId: number, clipId: string): Promise<boolean
 }
 
 function EmptyState() {
-  return <div className="empty"><div>✦</div><strong>No clips yet</strong><p>Select text in a supported AI conversation, then click “Clip”.</p><kbd>⌃⇧S</kbd></div>;
+  return <div className="empty"><div>✦</div><strong>{t('noClipsYet')}</strong><p>{t('emptyStateBody')}</p><kbd>⌃⇧S</kbd></div>;
 }
 
 async function refreshPageHighlights(): Promise<void> {

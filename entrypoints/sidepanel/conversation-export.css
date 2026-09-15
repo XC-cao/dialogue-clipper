@@ -1,0 +1,75 @@
+.markdown-source-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  margin-bottom: 10px;
+  padding: 3px;
+  border-radius: 9px;
+  background: #e9e7e1;
+}
+.markdown-source-switch button {
+  border: 0;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: transparent;
+  color: #777269;
+  font-size: 11px;
+}
+.markdown-source-switch button.active {
+  background: #fff;
+  color: #292824;
+  box-shadow: 0 1px 5px #3d392d18;
+  font-weight: 700;
+}
+.conversation-export-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.conversation-export-head > div {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.conversation-export-head strong {
+  overflow: hidden;
+  color: #45423d;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-export-head span {
+  color: #8a857d;
+  font-size: 9px;
+}
+.conversation-export-head button {
+  flex: 0 0 auto;
+  padding: 5px 7px;
+  font-size: 9px;
+}
+.conversation-export-scope,
+.conversation-export-warning {
+  margin: 0 0 8px;
+  border-radius: 7px;
+  padding: 7px 9px;
+  background: #e8f2ed;
+  color: #4b665b;
+  font-size: 9px;
+  line-height: 1.45;
+}
+.conversation-export-warning {
+  background: #fff1c9;
+  color: #75622e;
+}
+.conversation-export-state {
+  display: grid;
+  min-height: 210px;
+  place-items: center;
+  padding: 24px;
+  color: #777269;
+  font-size: 11px;
+  text-align: center;
+}
+.conversation-export-state.error { color: #9b3a32; }

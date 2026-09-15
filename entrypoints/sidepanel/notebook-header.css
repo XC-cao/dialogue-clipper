@@ -1,0 +1,133 @@
+.notebook-editor {
+  margin: 12px 0 12px;
+}
+
+.notebook-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.notebook-title-group {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.notebook-title-group .title-input {
+  min-width: 0;
+  flex: 1;
+  width: auto;
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.12;
+}
+
+.notebook-switcher {
+  flex: 0 0 23px;
+  width: 23px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #625f58;
+  cursor: pointer;
+  appearance: auto;
+}
+
+.notebook-switcher:hover {
+  background: #ebe8e1;
+}
+
+.notebook-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.notebook-action,
+.notebook-menu summary {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #d8d5ce;
+  border-radius: 7px;
+  background: #fff;
+  color: #6f6b63;
+  font-size: 17px;
+  line-height: 1;
+  list-style: none;
+}
+
+.notebook-menu summary {
+  font-size: 13px;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.notebook-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.notebook-menu {
+  position: relative;
+}
+
+.notebook-menu-popover {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 142px;
+  padding: 4px;
+  border: 1px solid #d8d5ce;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 7px 20px #3d392d1c;
+}
+
+.notebook-menu-popover button {
+  width: 100%;
+  border: 0;
+  border-radius: 5px;
+  padding: 7px 8px;
+  background: transparent;
+  text-align: left;
+  font-size: 11px;
+}
+
+.notebook-menu-popover button:hover {
+  background: #f4f2ed;
+}
+
+.notebook-editor > textarea {
+  display: block;
+  width: 100%;
+  min-height: 35px;
+  margin-top: 4px;
+  padding: 0;
+  resize: vertical;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #67635b;
+  font-size: 12px;
+}
+
+@media (max-width: 360px) {
+  .notebook-title-group .title-input {
+    font-size: 22px;
+  }
+
+  .notebook-actions {
+    gap: 3px;
+  }
+}

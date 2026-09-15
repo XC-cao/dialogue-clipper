@@ -4,13 +4,17 @@ import { resolveFloatingPosition, type RectLike } from '../lib/floating-position
 import { chooseHighlightSurface, type HighlightSurface } from '../lib/highlight-theme';
 import { isMissingHighlightConfirmed, recordMissingHighlight, type MissingHighlightAttempt } from '../lib/highlight-status';
 import {
-  attachClipsToConversationNodes, buildConversationSnapshot, conversationNodeId, conversationTextFingerprint, generateConversationNodeTitle, parseBranchInfo,
+  attachClipsToConversationNodes, buildConversationSnapshot, conversationNodeId, conversationTextFingerprint, findConversationNodeByLocator, generateConversationNodeTitle, parseBranchInfo,
   type ConversationGraphNode, type ConversationGraphSnapshot, type ConversationNodeLocator
 } from '../lib/conversation-graph';
+import { conversationElementToMarkdown, type ConversationExport } from '../lib/conversation-export';
 import type { Clip, HighlightColor } from '../lib/models';
 import type { ExtensionMessage } from '../lib/messages';
 import { loadState } from '../lib/storage';
 import { isSameConversationUrl } from '../lib/conversation-url';
+import { t } from '../lib/i18n';
+import { extractConversationOutline } from '../lib/conversation-outline';
+import { claimContentRuntime } from '../lib/content-runtime';
 
 const BUTTON_ID = 'dialogue-clipper-capture';
 const STYLE_ID = 'dialogue-clipper-styles';
@@ -26,6 +30,7 @@ export default defineContentScript({
   matches: ['https://chatgpt.com/*', 'https://claude.ai/*', 'https://gemini.google.com/*'],
   runAt: 'document_idle',
   main() {
+    if (!claimContentRuntime(globalThis as unknown as Record<string, unknown>)) return;
     const adapter = currentAdapter();
     if (!adapter) return;
     const activeAdapter = adapter;
@@ -108,7 +113,7 @@ export default defineContentScript({
           const endMessage = activeAdapter.messageRoot(liveRange.endContainer);
           if (startMessage || endMessage) {
             if (!startMessage || startMessage !== endMessage) {
-              return toast('Clipping across multiple messages or reports is not supported', 'error');
+              return toast(t('multipleMessagesError'), 'error');
             }
             range = liveRange.cloneRange();
             message = startMessage;
@@ -121,9 +126,9 @@ export default defineContentScript({
             message = lastMessage;
           }
         }
-        if (!range || !message) return toast('Select text in a message or report first', 'error');
+        if (!range || !message) return toast(t('selectTextFirst'), 'error');
         const originalText = range.toString();
-        if (!originalText.trim()) return toast('The selection is empty', 'error');
+        if (!originalText.trim()) return toast(t('selectionEmpty'), 'error');
 
         let response: ExtensionMessage | undefined;
         try {
@@ -136,16 +141,16 @@ export default defineContentScript({
             payload: { originalText, ...metadata, messageRole: role, anchor }
           } satisfies ExtensionMessage) as ExtensionMessage | undefined;
         } catch {
-          return toast('Unable to save the clip. Reload the page and try again.', 'error');
+          return toast(t('saveClipReload'), 'error');
         }
         hideButton();
         selection?.removeAllRanges();
-        if (response?.type !== 'CAPTURE_RESULT' || !response.ok) return toast('Unable to save the clip. Try again.', 'error');
+        if (response?.type !== 'CAPTURE_RESULT' || !response.ok) return toast(t('saveClipTryAgain'), 'error');
         if (response.clip) {
           if (!highlightClip(response.clip)) scheduleRefresh(0);
-          toast('Added to the current notebook');
+          toast(t('addedToNotebook'));
         } else {
-          toast('Select a notebook to save this clip');
+          toast(t('selectNotebookToSave'));
         }
       } finally {
         captureInFlight = false;
@@ -201,6 +206,8 @@ export default defineContentScript({
         const fullText = normalizeMessageText(root);
         if (!fullText) continue;
         const remainingRoots = roots.length - rootIndex - 1;
+        const outline = extractConversationOutline(root, Math.min(4000, Math.max(0, remainingText - (remainingRoots + 1) * 420)));
+        remainingText -= outline.items.reduce((sum, item) => sum + item.text.length, 0);
         const reservedPreviewText = Math.min(remainingText, remainingRoots * 420);
         const searchText = fullText.slice(0, Math.min(MAX_GRAPH_NODE_TEXT, Math.max(0, remainingText - reservedPreviewText)));
         remainingText -= searchText.length;
@@ -217,6 +224,7 @@ export default defineContentScript({
           title: generateConversationNodeTitle(fullText),
           text: searchText.length > 420 ? `${searchText.slice(0, 419)}…` : searchText,
           searchText,
+          outline,
           fingerprint: conversationTextFingerprint(searchText),
           order,
           clipIds: [],
@@ -241,6 +249,33 @@ export default defineContentScript({
       });
       scanPromise = tracked;
       return tracked;
+    };
+
+    const buildConversationExport = (): ConversationExport => {
+      if (!activeAdapter.isConversation()) throw new Error(t('openConversationFirst'));
+      const metadata = activeAdapter.metadata();
+      const messages = activeAdapter.contentRoots()
+        .filter(root => root.isConnected)
+        .slice(0, MAX_GRAPH_NODES)
+        .map((root, order) => {
+          const role = activeAdapter.messageRole(root);
+          const messageId = activeAdapter.messageId(root);
+          return {
+            id: conversationNodeId(metadata.conversationId, messageId, role, order),
+            role,
+            markdown: conversationElementToMarkdown(root),
+            order,
+            isReport: Boolean(messageId?.startsWith('report:'))
+          };
+        })
+        .filter(message => message.markdown.trim());
+      return {
+        version: 1,
+        ...metadata,
+        messages,
+        scope: 'current-visible-branch',
+        capturedAt: new Date().toISOString()
+      };
     };
 
     const publishConversationGraph = async () => {
@@ -338,7 +373,7 @@ export default defineContentScript({
       const state = await loadState();
       const clip = state.clips[clipId];
       if (!clip || !clipMatchesConversation(clip, activeAdapter.metadata())) {
-        toast('The source text was not found in this conversation', 'error');
+        toast(t('sourceTextNotFound'), 'error');
         return { ok: false, exact: false };
       }
 
@@ -348,7 +383,7 @@ export default defineContentScript({
         if (marks.length) {
           marks[0]!.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
           marks.forEach(pulseElement);
-          toast('Opened the source text');
+          toast(t('openedSourceText'));
           return { ok: true, exact: true };
         }
         const message = activeAdapter.findMessage(clip.anchor.messageId)
@@ -356,19 +391,20 @@ export default defineContentScript({
         if (message) {
           message.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
           pulseElement(message);
-          toast('Opened the source message, but the exact text could not be located', 'error');
+          toast(t('openedSourceMessageImprecise'), 'error');
           return { ok: true, exact: false };
         }
         await new Promise(resolve => window.setTimeout(resolve, 250));
       }
-      toast('The page content has changed, so the source cannot be located', 'error');
+      toast(t('pageChangedSource'), 'error');
       return { ok: false, exact: false };
     };
 
     chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
       if (!message || (message.version !== 1 && message.version !== 2)) return;
       const navigationMessage = message.type === 'START_CONVERSATION_GRAPH' || message.type === 'STOP_CONVERSATION_GRAPH' ||
-        message.type === 'GET_CONVERSATION_GRAPH' || message.type === 'SCROLL_TO_CONVERSATION_NODE' || message.type === 'SCROLL_TO_CLIP';
+        message.type === 'GET_CONVERSATION_GRAPH' || message.type === 'GET_CONVERSATION_EXPORT' ||
+        message.type === 'SCROLL_TO_CONVERSATION_NODE' || message.type === 'SCROLL_TO_CLIP';
       if (navigationMessage && message.version !== 2) return;
       if (message.type === 'START_CONVERSATION_GRAPH') {
         graphLeaseUntil = Date.now() + GRAPH_LEASE_MS;
@@ -398,6 +434,14 @@ export default defineContentScript({
         } satisfies ExtensionMessage));
         return true;
       }
+      if (message.type === 'GET_CONVERSATION_EXPORT') {
+        try {
+          sendResponse({ version: 2, type: 'CONVERSATION_EXPORT_RESULT', ok: true, value: buildConversationExport() } satisfies ExtensionMessage);
+        } catch (error) {
+          sendResponse({ version: 2, type: 'CONVERSATION_EXPORT_RESULT', ok: false, error: String(error) } satisfies ExtensionMessage);
+        }
+        return;
+      }
       if (message.type === 'SCROLL_TO_CONVERSATION_NODE') {
         void scrollToConversationNode(message.nodeId, message.conversationUrl, message.locator).then(ok => sendResponse({
           version: 2,
@@ -421,34 +465,28 @@ export default defineContentScript({
     const scrollToConversationNode = async (nodeId: string, expectedUrl: string, locator: ConversationNodeLocator): Promise<boolean> => {
       if (!activeAdapter.isConversation() || activeAdapter.metadata().conversationUrl !== expectedUrl) return false;
       let element = conversationNodeUrl === expectedUrl ? conversationNodeElements.get(nodeId) : undefined;
-      if (!element?.isConnected) {
+      const cachedMatches = element?.isConnected && conversationElementMatchesLocator(element, locator);
+      let resolvedNodeId = cachedMatches ? nodeId : undefined;
+      if (!cachedMatches) {
         const snapshot = await getConversationGraph();
-        element = conversationNodeElements.get(nodeId);
-        if (!element) {
-          const byMessageId = locator.messageId
-            ? snapshot.nodes.filter(node => node.messageId === locator.messageId)
-            : [];
-          const byFingerprint = snapshot.nodes.filter(node => node.role === locator.role && node.fingerprint === locator.fingerprint);
-          const byQuote = locator.quote
-            ? snapshot.nodes.filter(node => node.role === locator.role && node.searchText.includes(locator.quote))
-            : [];
-          const atOrder = snapshot.nodes[locator.order];
-          const positionalMatch = atOrder?.role === locator.role && (
-            atOrder.fingerprint === locator.fingerprint || Boolean(locator.quote && atOrder.searchText.includes(locator.quote))
-          ) ? atOrder : undefined;
-          const candidate = byMessageId.length === 1 ? byMessageId[0]
-            : positionalMatch
-              ?? (byFingerprint.length === 1 ? byFingerprint[0]
-                : byQuote.length === 1 ? byQuote[0] : undefined);
-          element = candidate ? conversationNodeElements.get(candidate.id) : undefined;
-        }
+        const candidate = findConversationNodeByLocator(snapshot.nodes, locator);
+        element = candidate ? conversationNodeElements.get(candidate.id) : undefined;
+        resolvedNodeId = candidate?.id;
       }
       if (!element) return false;
-      element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      scrollMessageStartIntoView(element);
       pulseElement(element);
-      lastActiveNodeId = nodeId;
+      lastActiveNodeId = resolvedNodeId ?? nodeId;
       return true;
     };
+
+    function conversationElementMatchesLocator(element: HTMLElement, locator: ConversationNodeLocator): boolean {
+      if (!element.isConnected || activeAdapter.messageRole(element) !== locator.role) return false;
+      if (locator.messageId) return activeAdapter.messageId(element) === locator.messageId;
+      const text = normalizeMessageText(element);
+      return conversationTextFingerprint(text.slice(0, MAX_GRAPH_NODE_TEXT)) === locator.fingerprint ||
+        Boolean(locator.quote && text.includes(locator.quote));
+    }
 
     function highlightClip(clip: Clip): boolean {
       const createdMarks: HTMLElement[] = [];
@@ -468,7 +506,7 @@ export default defineContentScript({
           const mark = document.createElement('mark');
           mark.setAttribute(HIGHLIGHT_ATTR, clip.id);
           updateHighlightMark(mark, clip, located.node.parentElement ?? root);
-          mark.title = 'Open this clip in the sidebar';
+          mark.title = t('openClipInSidebar');
           const range = document.createRange();
           range.setStart(located.node, located.start);
           range.setEnd(located.node, located.end);
@@ -512,7 +550,7 @@ export default defineContentScript({
       subtree: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ['aria-label', 'title']
+      attributeFilter: ['aria-label', 'title', 'role', 'aria-level', 'hidden', 'aria-hidden']
     });
     const themeObserver = new MutationObserver(() => scheduleRefresh(40));
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
@@ -548,7 +586,7 @@ function createCaptureButton(): HTMLButtonElement {
   const button = document.createElement('button');
   button.id = BUTTON_ID;
   button.type = 'button';
-  button.textContent = 'Clip';
+  button.textContent = t('clip');
   button.hidden = true;
   document.documentElement.append(button);
   return button;
@@ -642,6 +680,13 @@ function pulseElement(element: HTMLElement): void {
     { outline: '5px solid rgba(245, 158, 11, .55)', outlineOffset: '4px' },
     { outline: '0 solid rgba(245, 158, 11, 0)', outlineOffset: '8px' }
   ], { duration: 1100, easing: 'ease-out' });
+}
+
+function scrollMessageStartIntoView(element: HTMLElement): void {
+  const previous = element.style.scrollMarginTop;
+  element.style.scrollMarginTop = '96px';
+  element.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+  window.setTimeout(() => { element.style.scrollMarginTop = previous; }, 500);
 }
 
 function normalizeMessageText(element: HTMLElement): string {

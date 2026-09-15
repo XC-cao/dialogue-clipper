@@ -1,6 +1,7 @@
 import type { SiteAdapter } from './types';
 import { isSupportedConversationUrl } from '../conversation-url';
 import { canonicalUrl, closest, closestReport, pathConversationId, reportId, titleFromPage, uniqueRoots } from './types';
+import { t } from '../i18n';
 
 const SPECIFIC_MESSAGE = 'user-query, model-response, [data-message-id]';
 const MESSAGE = `${SPECIFIC_MESSAGE}, .conversation-container`;
@@ -23,7 +24,7 @@ function reportRoot(element: HTMLElement): boolean {
 export const geminiAdapter: SiteAdapter = {
   platform: 'gemini',
   isConversation: () => isSupportedConversationUrl(location.href, 'gemini'),
-  metadata: () => ({ platform: 'gemini', conversationTitle: titleFromPage('Gemini conversation'), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
+  metadata: () => ({ platform: 'gemini', conversationTitle: titleFromPage(t('geminiConversation')), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
   messageRoot,
   messageId: element => reportRoot(element) ? reportId(element) : (element.dataset.messageId ?? element.id) || undefined,
   messageRole: element => {

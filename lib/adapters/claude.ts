@@ -1,6 +1,7 @@
 import type { SiteAdapter } from './types';
 import { isSupportedConversationUrl } from '../conversation-url';
 import { canonicalUrl, closest, closestReport, pathConversationId, reportId, titleFromPage, uniqueRoots } from './types';
+import { t } from '../i18n';
 
 const SEMANTIC_MESSAGE = '[data-testid="user-message"], [data-testid="assistant-message"], [data-message-role]';
 const MESSAGE = `${SEMANTIC_MESSAGE}, [data-testid="message-content"], [data-testid="user-message-content"], [data-testid="assistant-message-content"], .font-claude-message, .font-user-message, .font-claude-response, .font-user-response, [class*="font-claude-message" i], [class*="font-user-message" i], [class*="font-claude-response" i], [class*="font-user-response" i]`;
@@ -31,7 +32,7 @@ function reportRoot(element: HTMLElement): boolean {
 export const claudeAdapter: SiteAdapter = {
   platform: 'claude',
   isConversation: () => isSupportedConversationUrl(location.href, 'claude'),
-  metadata: () => ({ platform: 'claude', conversationTitle: titleFromPage('Claude conversation'), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
+  metadata: () => ({ platform: 'claude', conversationTitle: titleFromPage(t('claudeConversation')), conversationUrl: canonicalUrl(), conversationId: pathConversationId() }),
   messageRoot,
   messageId: element => reportRoot(element)
     ? reportId(element)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   attachClipsToConversationNodes, buildConversationSnapshot, conversationNodeId,
-  conversationTextFingerprint, findConversationNodeForClip, generateConversationNodeTitle, isConversationGraphSnapshot, parseBranchInfo, type ConversationGraphNode
+  conversationNodeLocator, conversationTextFingerprint, findConversationNodeByLocator, findConversationNodeForClip, generateConversationNodeTitle, isConversationGraphSnapshot, parseBranchInfo, type ConversationGraphNode
 } from '../lib/conversation-graph';
 import type { Clip } from '../lib/models';
 
@@ -44,6 +44,17 @@ describe('conversation graph', () => {
     const byId = { ...node('a', 0), messageId: 'm1', role: 'assistant' as const, searchText: '内容已经被编辑' };
     expect(findConversationNodeForClip([byId], targetClip)?.id).toBe('a');
     expect(findConversationNodeForClip([{ ...byId, messageId: undefined, searchText: '正文包含关键结论' }], targetClip)?.id).toBe('a');
+  });
+
+  it('刷新后优先用稳定标识和内容定位，不先信任旧顺序', () => {
+    const original = { ...node('old', 1), messageId: 'stable', role: 'assistant' as const, searchText: '唯一答案' };
+    const locator = { ...conversationNodeLocator(original), order: 0 };
+    const shifted = [
+      { ...node('wrong', 0), role: 'assistant' as const, searchText: '另一条回答' },
+      { ...original, id: 'fresh', order: 1 }
+    ];
+    expect(findConversationNodeByLocator(shifted, locator)?.id).toBe('fresh');
+    expect(findConversationNodeByLocator(shifted.map(item => ({ ...item, messageId: undefined })), { ...locator, messageId: undefined })?.id).toBe('fresh');
   });
 
   it('重复原文无法唯一确定消息时不误关联摘录', () => {

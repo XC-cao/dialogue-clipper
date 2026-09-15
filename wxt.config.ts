@@ -5,14 +5,15 @@ export default defineConfig({
   manifest: env => {
     const isSafari = env.browser === 'safari';
     return {
-      name: 'Dialogue Clipper',
-      description: 'Clip text from ChatGPT, Claude, and Gemini, navigate long conversations with maps, and export Markdown.',
+      name: '__MSG_extName__',
+      description: '__MSG_extDescription__',
+      default_locale: 'en',
       version: '0.1.0',
       ...(isSafari ? {
         browser_specific_settings: { safari: { strict_min_version: '14.0' } },
         permissions: ['storage'],
         action: {
-          default_title: 'Open Dialogue Clipper',
+          default_title: '__MSG_actionTitle__',
           default_popup: 'popup.html',
           default_icon: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png' }
         }
@@ -20,7 +21,7 @@ export default defineConfig({
         minimum_chrome_version: '116',
         permissions: ['storage', 'sidePanel', 'downloads', 'scripting'],
         action: {
-          default_title: 'Open Dialogue Clipper',
+          default_title: '__MSG_actionTitle__',
           default_icon: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png' }
         },
         side_panel: { default_path: 'sidepanel.html' }
@@ -34,7 +35,7 @@ export default defineConfig({
       commands: {
         'capture-selection': {
           suggested_key: { default: 'Alt+Shift+S', mac: 'MacCtrl+Shift+S' },
-          description: 'Clip the currently selected text'
+          description: '__MSG_captureCommand__'
         }
       }
     };

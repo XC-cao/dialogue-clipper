@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildClipTree, validParentOptions } from '../lib/clip-tree';
+import { buildClipTree, resolveClipFocus, validParentOptions } from '../lib/clip-tree';
 import type { Clip } from '../lib/models';
 
 const clip = (id: string, parentClipId?: string): Clip => ({
@@ -24,5 +24,15 @@ describe('clip tree', () => {
   it('损坏的循环数据仍能作为根节点展示', () => {
     const tree = buildClipTree([clip('a', 'b'), clip('b', 'a')]);
     expect(new Set(tree.map(node => node.clip.id))).toEqual(new Set(['a', 'b']));
+  });
+
+  it('从对话节点进入摘录图时聚焦同一笔记本的全部关联摘录', () => {
+    const currentA = clip('a');
+    const currentB = clip('b');
+    const elsewhere = { ...clip('c'), notebookId: 'other' };
+    expect(resolveClipFocus([currentA, currentB, elsewhere], 'n')).toEqual({
+      clips: [currentA, currentB], ambiguous: false, omittedOtherNotebooks: true
+    });
+    expect(resolveClipFocus([currentA, elsewhere], 'missing')).toMatchObject({ clips: [], ambiguous: true });
   });
 });

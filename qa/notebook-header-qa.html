@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="../entrypoints/sidepanel/styles.css">
+    <link rel="stylesheet" href="../entrypoints/sidepanel/notebook-header.css">
+    <style>
+      body { min-width: 0; }
+      main { min-height: 0; width: 320px; }
+      .notebook-editor { margin-top: 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="notebook-editor">
+        <div class="notebook-heading">
+          <div class="notebook-title-group">
+            <input id="notebook-title" class="title-input" aria-label="Notebook title" value="摘录系统本身讨论">
+            <select class="notebook-switcher" aria-label="Switch notebook" title="Switch notebook">
+              <option value=""> </option>
+              <option>研究方法</option>
+              <option>产品设计</option>
+            </select>
+          </div>
+          <div class="notebook-actions">
+            <button class="notebook-action" title="New notebook" aria-label="New notebook">＋</button>
+            <details class="notebook-menu">
+              <summary title="Notebook actions" aria-label="Notebook actions">•••</summary>
+              <div class="notebook-menu-popover" role="menu">
+                <button class="danger-ghost" role="menuitem">Delete notebook</button>
+              </div>
+            </details>
+          </div>
+        </div>
+        <textarea aria-label="Notebook description" placeholder="Add a short description (optional)"></textarea>
+      </section>
+    </main>
+  </body>
+</html>

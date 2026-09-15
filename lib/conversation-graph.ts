@@ -1,5 +1,7 @@
 import type { Clip, MessageRole, Platform } from './models';
 import type { ConversationMetadata } from './adapters/types';
+import { t } from './i18n';
+import { isConversationOutline, type ConversationOutline } from './conversation-outline';
 
 export interface ConversationBranchInfo {
   index: number;
@@ -16,6 +18,8 @@ export interface ConversationGraphNode {
   text: string;
   /** Search/association text kept only in the in-memory graph snapshot. */
   searchText: string;
+  /** Actual source headings and bold phrases; optional for older content scripts. */
+  outline?: ConversationOutline;
   fingerprint: string;
   order: number;
   clipIds: string[];
@@ -86,7 +90,7 @@ export function generateConversationNodeTitle(value: string): string {
     const sentence = text.split(/[。！？!?；;]\s*/)[0]?.trim() ?? text;
     if (sentence) return truncateTitle(sentence);
   }
-  return 'Empty message';
+  return t('emptyMessage');
 }
 
 export function conversationNodeLocator(node: ConversationGraphNode): ConversationNodeLocator {
@@ -97,6 +101,27 @@ export function conversationNodeLocator(node: ConversationGraphNode): Conversati
     fingerprint: node.fingerprint,
     quote: node.searchText.slice(0, 240)
   };
+}
+
+/** Resolves a stale map node against a freshly scanned page without trusting order first. */
+export function findConversationNodeByLocator(
+  nodes: ConversationGraphNode[],
+  locator: ConversationNodeLocator
+): ConversationGraphNode | undefined {
+  if (locator.messageId) {
+    const byMessageId = nodes.filter(node => node.messageId === locator.messageId && node.role === locator.role);
+    if (byMessageId.length === 1) return byMessageId[0];
+  }
+  const byFingerprint = nodes.filter(node => node.role === locator.role && node.fingerprint === locator.fingerprint);
+  if (byFingerprint.length === 1) return byFingerprint[0];
+  const byQuote = locator.quote
+    ? nodes.filter(node => node.role === locator.role && node.searchText.includes(locator.quote))
+    : [];
+  if (byQuote.length === 1) return byQuote[0];
+  const atOrder = nodes[locator.order];
+  if (atOrder?.role !== locator.role) return undefined;
+  const sameContent = atOrder.fingerprint === locator.fingerprint || Boolean(locator.quote && atOrder.searchText.includes(locator.quote));
+  return sameContent ? atOrder : undefined;
 }
 
 export function attachClipsToConversationNodes(
@@ -140,7 +165,7 @@ export function buildConversationSnapshot(
   activeNodeId?: string
 ): ConversationGraphSnapshot {
   const ordered = [...nodes].sort((a, b) => a.order - b.order);
-  const revision = stableHash(ordered.map(node => `${node.id}:${node.fingerprint}:${node.clipIds.join(',')}:${node.branch?.index ?? 0}/${node.branch?.count ?? 0}`).join('|'));
+  const revision = stableHash(ordered.map(node => `${node.id}:${node.fingerprint}:${JSON.stringify(node.outline ?? null)}:${node.clipIds.join(',')}:${node.branch?.index ?? 0}/${node.branch?.count ?? 0}`).join('|'));
   return {
     version: 1,
     ...metadata,
@@ -179,7 +204,9 @@ export function isConversationGraphSnapshot(value: unknown): value is Conversati
   const nodeIds = new Set<string>();
   const validNodes = item.nodes.every(node => {
     if (!node || typeof node !== 'object') return false;
+    if (node.outline !== undefined && !isConversationOutline(node.outline)) return false;
     totalText += typeof node.searchText === 'string' ? node.searchText.length : 0;
+    totalText += node.outline?.items.reduce((sum, entry) => sum + entry.text.length, 0) ?? 0;
     if (nodeIds.has(node.id)) return false;
     nodeIds.add(node.id);
     return Boolean(

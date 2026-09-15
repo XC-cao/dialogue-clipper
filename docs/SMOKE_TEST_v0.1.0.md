@@ -1,6 +1,6 @@
 # v0.1.0 production smoke test
 
-测试日期：2026-09-01
+自动化复检日期：2026-09-08；实站回归记录日期：2026-09-01
 
 测试构建：Chrome MV3 production build
 
@@ -9,17 +9,18 @@
 ## Automated gate
 
 - [x] TypeScript (`tsc --noEmit`)
-- [x] Vitest：13 files / 62 tests passed
+- [x] Vitest：19 files / 91 tests passed
 - [x] WXT Chrome MV3 production build
+- [x] WXT Safari MV2 production build
 - [x] Manifest / permission inspection
 - [x] Final ZIP static scan
-- [x] Final ZIP accepted by Chrome Web Store draft package parser
+- [ ] Current ZIP accepted by Chrome Web Store draft package parser
 
 Package: `.output/dialogue-clipper-0.1.0-chrome.zip`
 
-SHA-256: `33529e5014fca0f798b376348b3f87e932c855c7418fb12b683c926f5bf98a5d`
+SHA-256: `5e0f19cac06a17f0d7e9badb4aeb1a9ae63f24753d1a4dfcfed5a2eaf37376b6`
 
-The archive contains 14 entries and 540,056 uncompressed bytes. The manifest is version `0.1.0`, Manifest V3, Chrome 116+, with only `storage`, `sidePanel`, `downloads`, `scripting`, and the three declared host permissions. Static inspection found no `eval`, `new Function`, `XMLHttpRequest`, or `WebSocket`. The bundled `fetch` occurrence is React DOM's module-preload helper and only loads a linked packaged module; URL strings outside the three supported hosts are library documentation, SVG namespaces, and React Flow attribution, not remote executable code.
+The archive contains 33 entries and 725,900 uncompressed bytes. The manifest is version `0.1.0`, Manifest V3, Chrome 116+, with only `storage`, `sidePanel`, `downloads`, `scripting`, and the three declared host permissions. Static inspection found no `eval`, `new Function`, `XMLHttpRequest`, or `WebSocket`. The bundled `fetch` occurrence is React DOM's module-preload helper and only loads a linked packaged module; URL strings outside the three supported hosts are library documentation, SVG namespaces, and React Flow attribution, not remote executable code.
 
 ## Real-site matrix
 
@@ -36,5 +37,6 @@ The archive contains 14 entries and 540,056 uncompressed bytes. The manifest is 
 3. On ChatGPT, confirm the conversation map once in a clean test conversation.
 4. Confirm Markdown copy and download once with the final notebook.
 5. Stale extension-context errors were cleared after reloading the final build; confirm no new errors appear after the remaining Claude/Gemini interactions.
+6. Upload the current ZIP to the Chrome Web Store draft and confirm that its package parser accepts it.
 
 Do not mark the three-site gate complete or submit for review until the remaining checks pass.

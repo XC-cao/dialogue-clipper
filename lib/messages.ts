@@ -1,5 +1,6 @@
 import type { CapturePayload, Clip } from './models';
 import type { ConversationGraphSnapshot, ConversationNodeLocator } from './conversation-graph';
+import type { ConversationExport } from './conversation-export';
 
 export type ExtensionMessage =
   | { version: 1; type: 'CAPTURE_SELECTION'; payload: CapturePayload }
@@ -13,6 +14,8 @@ export type ExtensionMessage =
   | { version: 2; type: 'START_CONVERSATION_GRAPH' }
   | { version: 2; type: 'STOP_CONVERSATION_GRAPH' }
   | { version: 2; type: 'GET_CONVERSATION_GRAPH' }
+  | { version: 2; type: 'GET_CONVERSATION_EXPORT' }
+  | { version: 2; type: 'CONVERSATION_EXPORT_RESULT'; ok: boolean; value?: ConversationExport; error?: string }
   | { version: 2; type: 'CONVERSATION_GRAPH_RESULT'; ok: boolean; snapshot?: ConversationGraphSnapshot; error?: string }
   | { version: 2; type: 'CONVERSATION_GRAPH_UPDATED'; snapshot: ConversationGraphSnapshot }
   | { version: 2; type: 'CONVERSATION_GRAPH_CLEARED'; conversationUrl: string }
