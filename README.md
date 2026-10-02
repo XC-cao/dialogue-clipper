@@ -35,27 +35,33 @@
 
 ## 安装
 
-### 下载 Release
+### 从 Chrome Web Store 安装（推荐）
 
-从 GitHub Releases 下载 `dialogue-clipper-0.1.0-chrome.zip`，解压后打开 `chrome://extensions`：
+打开 [Dialogue Clipper 的 Chrome Web Store 页面](https://chromewebstore.google.com/detail/dialogue-clipper/pjgblipkgambaifebpcbchjiljaaocee)，点击“添加至 Chrome”并确认安装。
 
-1. 开启右上角“开发者模式”。
-2. 点击“加载已解压的扩展程序”。
-3. 选择解压目录。
-4. 在 ChatGPT、Claude 或 Gemini 打开一条对话，点击扩展图标打开侧栏。
+安装后，在 ChatGPT、Claude 或 Gemini 打开一条对话，点击扩展图标打开侧栏。
 
-Chrome Web Store 上架后，本节会补充商店链接。
+GitHub Releases 暂未提供可下载的安装包；需要本地加载或开发时，请按下方步骤从源码构建。
 
 ### 从源码构建
 
-要求 Node.js 20+：
+要求 Git 与 Node.js 20+：
 
 ```bash
-npm install
+git clone https://github.com/XC-cao/dialogue-clipper.git
+cd dialogue-clipper
+npm ci
 npm run build
 ```
 
-然后在 `chrome://extensions` 加载 `.output/chrome-mv3`。运行开发模式：
+构建完成后打开 `chrome://extensions`：
+
+1. 开启右上角“开发者模式”。
+2. 点击“加载已解压的扩展程序”。
+3. 选择仓库中的 `.output/chrome-mv3` 目录。
+4. 在 ChatGPT、Claude 或 Gemini 打开一条对话，点击扩展图标打开侧栏。
+
+源码构建使用当前检出的代码，可能与商店版本不同。运行开发模式：
 
 ```bash
 npm run dev

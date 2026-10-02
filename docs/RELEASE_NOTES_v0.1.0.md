@@ -2,6 +2,12 @@
 
 首个公开版本：在 ChatGPT、Claude 和 Gemini 中摘录关键原文，添加本地批注，用对话图与摘录图回看上下文，并导出 Markdown。
 
+## 安装
+
+v0.1.0 已在 [Chrome Web Store](https://chromewebstore.google.com/detail/dialogue-clipper/pjgblipkgambaifebpcbchjiljaaocee) 上架，商店页面标注的更新时间为 2026-09-17。
+
+截至 2026-10-02，GitHub Releases 尚未提供安装包。需要本地构建时请参阅 [README 安装说明](../README.md#安装)；源码构建可能与商店版本不同。
+
 ## Highlights
 
 - 在单条消息或受支持的报告正文中选中文字并摘录。
@@ -18,4 +24,4 @@
 - Claude (`claude.ai`)
 - Gemini (`gemini.google.com`)
 
-Chrome 116+。安装与构建说明见 README，完整数据处理说明见 PRIVACY.md。
+Chrome 116+。安装与构建说明见 [README](../README.md#安装)，完整数据处理说明见 [PRIVACY.md](../PRIVACY.md)。

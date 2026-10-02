@@ -1,8 +1,17 @@
-# Chrome Web Store v0.1.0 提交清单
+# Chrome Web Store v0.1.0 发布状态与提交记录
 
-更新日期：2026-09-01
+公开状态核验日期：2026-10-02
 
-## 分工
+## 当前公开状态
+
+- Dialogue Clipper 已在 [Chrome Web Store](https://chromewebstore.google.com/detail/dialogue-clipper/pjgblipkgambaifebpcbchjiljaaocee) 公开上架，可从商店页面安装。
+- 商店显示版本 `0.1.0`，更新时间 `2026-09-17`；item ID 为 `pjgblipkgambaifebpcbchjiljaaocee`。
+- [GitHub Releases](https://github.com/XC-cao/dialogue-clipper/releases) 尚无发布记录或可下载的 ZIP。用户安装步骤见 [README](../README.md#安装)，后续发布检查见 [RELEASE.md](RELEASE.md)。
+- 本次状态更新依据公开商店页与 GitHub 发布记录，未复核当前 Developer Dashboard，也未补做三站实测。[现有 smoke-test 记录](SMOKE_TEST_v0.1.0.md) 仍保留未完成项；商店上线不作为这些测试已通过的证据。
+
+## 历史分工（2026-09-01）
+
+以下保留首次提交前的准备与待办记录，未勾选项反映当时的记录，不代表当前仍在等待上架。
 
 ### Codex 可完成
 
@@ -28,29 +37,29 @@
 - [ ] 处理 Google 账号或 Dashboard 出现的验证码、付款确认和身份验证。
 - [ ] 在确认 draft 安装检查通过且页面预览无误后，点击 Submit for review。
 
-## 建议的今日顺序
+## 首次提交流程（历史参考）
 
 1. Codex 完成代码、文案、构建、测试、截图和 ZIP 冻结。
 2. 开发者同时完成注册费、邮箱验证和 2FA。
-3. Codex 创建并验证 GitHub Release，使支持与隐私 URL 公开可访问。
+3. 双方核对公开仓库的支持与隐私 URL；这些页面不依赖 GitHub Release。
 4. 开发者创建 Dashboard item，上传 ZIP；先保存 draft，不立即提交审核。
 5. 双方核对 Dashboard 自动检查、权限警告、商店预览和隐私字段。
 6. 开发者点击 Submit for review。
 
-## 当前 Dashboard 状态
+## 历史 Dashboard 快照（2026-09-01）
 
 - ZIP 已通过首次解析并创建草稿。
 - 商品详情：详细说明、分类、语言、首页与支持 URL、128 px 图标、4 张截图和 440 × 280 小型宣传图已保存。
 - Privacy Practices：单一用途、权限理由、无远程代码、`个人通讯` / `网络记录` / `网站内容`、3 项 Limited Use 与隐私政策 URL 已保存。
 - Distribution：免费、公开、所有地区。
-- 当前账号阻塞：无；最终审核提交仍须等待三站 smoke gate 完成。
-- Claude DOM 兼容性修复后的正式 ZIP 已替换到草稿并通过解析；Dashboard 已启用“提请审核”，但尚未点击。
+- 当时账号阻塞：无；记录中的最终审核提交仍等待三站 smoke gate 完成。
+- 当时 Claude DOM 兼容性修复后的正式 ZIP 已替换到草稿并通过解析；Dashboard 已启用“提请审核”，尚未点击。后续已公开上架，见本文件顶部的当前公开状态。
 
-## 上传文件
+## 首次提交前的文件准备记录（历史参考）
 
 - Extension package：`dialogue-clipper-0.1.0-chrome.zip`
 - Icon：`public/icon/128.png`
 - Screenshots：`store-assets/screenshots/01-*.png` 至 `04-*.png`
 - Small promo tile：优先使用 `store-assets/promo-440x280-v2.png`
 
-所有可粘贴字段见 [`STORE_LISTING.md`](STORE_LISTING.md)，测试记录见 `SMOKE_TEST_v0.1.0.md`（完成真实页面验证后生成）。
+商店字段参考见 [STORE_LISTING.md](STORE_LISTING.md)，已保存的测试记录见 [SMOKE_TEST_v0.1.0.md](SMOKE_TEST_v0.1.0.md)。后续版本需重新核验素材与测试结果。
